@@ -1,0 +1,121 @@
+[tool.poetry]
+name = "sandbox"
+version = "0.0.0"
+description = "<description of the project>"
+authors = [
+    "author <author@email.com>"
+]
+license = "BSD-3-Clause"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+click = "^8.1.7"
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.3.0"
+isort = "^5.12.0"
+mypy = "^1.10.0"
+pylint = "^2.16.2"
+pytest = "^7.3.0"
+pytest-cov = "^4.0.0"
+pytest-subtests = "^0.11.0"
+sphinx = "^7.0.1"
+furo = "^2023.5.20"
+myst-parser = "^2.0.0"
+sphinx-copybutton = "^0.5.2"
+tox = "^4.5.1"
+ruff = "^0.6.3"
+
+[tool.isort]
+profile = "black"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pylint.messages_control]
+disable = []
+good-names = ["i", "j", "k"]
+
+[tool.pylint.design]
+max-args = 10 # maximum number of arguments for function / method
+
+[tool.pylint.similarities]
+min-similarity-lines = 10 # minimum lines number of a similarity
+
+[tool.mypy]
+mypy_path = "src"
+explicit_package_bases = true
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = []
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812", # missing-trailing-comma
+    "D100",   # undocumented-public-module
+    "D105",   # undocumented-magic-method
+    "D107",   # undocumented-public-init
+    "D202",   # no-blank-line-after-function
+    "D203",   # one-blank-line-before-class
+    "D212",   # multi-line-summary-first-line
+    "D413",   # blank-line-after-last-section
+    "D416",   # section-name-ends-in-colon
+]
+
+[tool.ruff.lint.pylint]
+max-args = 10
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = [
+    "D",      # pydocstyle
+    "PT009",  # pytest-unittest-assertion
+    "PT027",  # pytest-unittest-raises-assertion
+    "INP001", # implicit-namespace-package
+    "ANN201", # missing-return-type-undocumented-public-function
+    "S311",   # suspicious-non-cryptographic-random-usage
+    "ANN001", # missing-type-function-argument
+    "ANN003", # missing-type-kwargs
+    "ANN202", # missing-type-args
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
+
+[tool.tox]
+legacy_tox_ini = """
+[tox]
+isolated_build = True
+envlist = py{39,310,311}, format, lint, typecheck
+skipsdist=True
+
+[testenv]
+allowlist_externals = poetry
+commands =
+    poetry run pytest --cov-report html --cov=src/ tests/
+
+[testenv:format]
+commands =
+    poetry run black -l 100 src/ tests/
+    poetry run isort -l 100 src/ tests/
+
+[testenv:lint]
+commands =
+    poetry run pylint --ignore-patterns=test.*?py src/ tests/ --fail-under=9.0
+    poetry run ruff check src/ tests/
+
+[testenv:typecheck]
+commands =
+    poetry run mypy --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs src
+"""
