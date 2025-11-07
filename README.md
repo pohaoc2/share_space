@@ -8,178 +8,83 @@
 [![Version](https://bagherilab.github.io/python_project_template/_badges/version.svg)](https://pypi.org/project/python_project_template/)
 [![License](https://bagherilab.github.io/python_project_template/_badges/license.svg)](https://github.com/bagherilab/python_project_template/blob/main/LICENSE)
 
-This repository is a template for Python projects that uses the GitHub Actions and the following tools:
+# Simulation to Experiment Image Transfer using ViT
 
-- [Poetry](https://python-poetry.org/) for packaging and dependency management
-- [Tox](https://tox.readthedocs.io/en/latest/) for automated testing
-- [Black](https://black.readthedocs.io/en/stable/) for code formatting
-- [isort](https://pycqa.github.io/isort/) for sorting imports
-- [Pylint](https://www.pylint.org/) for linting
-- [Mypy](http://mypy-lang.org/) for type checking
-- [Sphinx](https://www.sphinx-doc.org/) for automated documentation
+This implementation uses a Vision Transformer-based teacher-student framework inspired by DINOv2 to transfer simulation images to experiment-like images.
 
-Make sure you have Poetry installed.
-The other tools will be installed by Poetry.
+## Architecture
 
-## Getting started
+### Key Components:
 
-1. Clone the repo.
-2. Initialize the repository (if you already have a `pyproject.toml` file, you can skip to step 3):
+1. **ViT Encoder**: Extracts features using Vision Transformer (pretrained on ImageNet)
+2. **Generator Head**: Transforms features back to images using transformer decoder
+3. **Teacher-Student Framework**: 
+   - Student generates exp-like images from simulation
+   - Teacher processes real experiment images
+   - Teacher updated via EMA of student
+4. **Multi-component Loss**:
+   - Feature alignment (distillation loss)
+   - Pixel reconstruction (L1 loss)
+   - Perceptual loss (patch-wise comparison)
 
+## Setup
 ```bash
-$ poetry init
+# Install dependencies
+pip install torch torchvision timm scipy pillow matplotlib tqdm numpy
+
+# Create dummy data (or use your own)
+python example_usage.py
+
+# Train model
+python sim2exp_transfer.py
 ```
 
-3. Specify the python version you want to use for the environment:
+## Using Your Own Data
 
-```bash
-$ poetry env use 3.10
+Organize your data as:
+```
+data/
+├── simulation/
+│   ├── sim_0001.png
+│   ├── sim_0002.png
+│   └── ...
+└── experiment/
+    ├── exp_0001.png
+    ├── exp_0002.png
+    └── ...
 ```
 
-If not specified, Poetry will use your default Python version.
+Images should be paired (same filename index).
 
-4. Activate the environment (this is all you need for day-to-day development):
+## Training
 
-```bash
-$ poetry shell
-```
+The model trains using:
+- **Pretrained ViT**: Better initialization (ImageNet weights)
+- **Teacher-Student**: Teacher guides student via feature matching
+- **EMA Update**: Teacher = exponential moving average of student
+- **Multi-loss**: Balances feature alignment and image quality
 
-5. Install dependencies.
+## Evaluation
 
-```bash
-$ poetry install
-```
+- **FID Score**: Measures distribution similarity between generated and real images
+  - FID < 10: Excellent
+  - FID < 50: Good
+  - FID < 100: Acceptable
+  
+- **Visual Comparison**: Side-by-side comparison of sim/generated/real
 
-6. Run the CLI.
+## Customization
 
-```bash
-$ python src/sandbox 10
-[1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
-55
-```
+Adjust hyperparameters in `main()`:
+- `batch_size`: Batch size (default: 16)
+- `num_epochs`: Training epochs (default: 50)
+- `lr`: Learning rate (default: 1e-4)
+- Loss weights in `Sim2ExpLoss`
 
-## General commands
+## Results
 
-The `Makefile` include five commands for working with the project.
-
-- `make clean` will clean all the build and testing files
-- `make build` will run tests, format, lint, and type check your code (you can also just run `tox`)
-- `make docs` will generate documentation
-- `make check file=<path/to/file>` will run linting checks on the specified file or directory
-- `make release version=<patch|minor|major>` will generate a release branch with semantic versioning
-
-## Template updates
-
-There are a number of places in this template reposiotry that are specific to the template and will need to be updated for your specific project:
-
-- Badge links in the `README.md`
-- Section `[tool.poetry]` in `pyproject.toml` for project-specific dependencies
-- Section `[tool.mypy]` in `pyproject.toml` for project-specific type checking configuration
-- Section `[tool.pylint]` in `pyproject.toml` for project-specific linting configuration
-- Section `[tool.tox]` in `pyproject.toml` for project-specific testing configuration
-- Project information section in `docs/conf.py`
-
-## Repository tools
-
-### Poetry
-
-Poetry makes it explicit what dependencies (and what versions of those dependencies) are necessary for the project.
-When new dependencies are added, Poetry performs an exhaustive dependency resolution to make sure that all the dependencies (and their versions) can work together.
-This does mean the initial install can take a little while, especially if you have many dependencies, but subsequent installs will be faster once the `poetry.lock` file has been created.
-
-To add a dependency, use:
-
-```bash
-$ poetry add <dependency>
-```
-
-You can additionally specify version constraints (e.g. `<dependency>@<version constraints>`).
-Use `--G dev` to indicate development dependencies.
-
-You can also add dependencies directly to the `pyproject.toml` file.
-Make sure to run `poetry lock --no-update` to refresh the lock file after adding dependencies to the `pyproject.toml`.
-
-For projects with CLI, you can simplify the call to the CLI so instead of `python src/sandbox/cli.py 10` you can simply call `sandbox-cli 10`.
-Add these commands to the `pyproject.toml`:
-
-```toml
-[tool.poetry.scripts]
-sandbox-cli = "sandbox.__main__:cli"
-```
-
-Run `poetry install --sync` to update the environment.
-Now you can use the simplified command:
-
-```bash
-$ sandbox-cli 10
-```
-
-### GitHub Actions
-
-Tests are run on each push.
-For projects that should be tested on multiple Python versions, make sure to update the matrix with additional versions in `.github/workflows/build.yml`.
-
-Documentation is automatically generated by `.github/workflows/documentation.yml` on pushes to the main branch.
-The documentation files are deployed on a separate branch called `gh-pages`.
-You can host the documentation using GitHub Pages from this branch (go to Settings > Pages and set page source to the branch `gh-pages` and the directory to `root`).
-
-Linting is performed on each push.
-This workflow `.github/workflows/lint.yml` lints code using Pylint (fails when score is < 7.0), checks formatting with Black (fails if files would be reformatted), and performs type checking with MyPy (fails if code has type errors).
-Note that this type checking is not the same as the type checking done by Tox, which additionally checks for missing types.
-
-The release action `.github/workflows/release.yml` is performed on all branches that begin with `release/` (which can be created using `make release`).
-This workflow updates `CHANGELOG.md` with all the PR commits to the main branch since the last release and creates a release PR.
-
-The publish action `.github/workflows/publish.yml` is triggered by merging a release PR.
-This workflow builds a changelog, creates a GitHub Release, and publishes the updated package version to PyPI.
-Note that publishing to PyPI requires the repository to be set up with trusted publishing.
-
-### Tox
-
-Tox aims to automate and standardize testing.
-You can use tox to automatically run tests on different python versions, as well as things like linting and type checking.
-
-Tox can be configured in the `[tool.tox]` section in `pyproject.toml` for additional python versions or testing environments.
-Note that the type checking specified in the provided configuration is more strict than the type checking specified in `.github/workflows/lint.yml`.
-
-You can run specific tox environments using:
-
-```bash
-$ tox -e <env>
-```
-
-### Pylint
-
-Pylint checks for basic errors in your code, aims to enforce a coding standard, and identifies code smells.
-The tool will score code out of 10, with the linting GitHub Action set to pass if the score is above 7.
-Most recommendations from Pylint are good, but it is not perfect.
-Make sure to be deliberate with which messages you ignore and which recommendations you follow.
-
-Pylint can be configured in the `[tool.pylint]` section in `pyproject.toml` to ignore specific messages (such as `missing-module-docstring`), exclude certain variable names that Pylint considers too short, and adjust additional settings relevant for your project.
-
-### Mypy
-
-Mypy performs static type checking.
-Adding type hinting makes it easier to find bugs and removes the need to add tests solely for type checking.
-
-Mypy will avoid assuming types in imported dependencies, so will generally throw a `Cannot find implementation or library stub for module` error.
-Update the `[tool.mypy]` section in `pyproject.toml` to ignore these missing imports:
-
-```
-[[tool.mypy.overrides]]
-module = [
-    "<dependency>.*",
-]
-ignore_missing_imports = true
-```
-
-Add a `py.typed` file to each module to indicate that the module is typed.
-
-### Sphinx
-
-Sphinx is a tool to generate documentation.
-We have set it up to automatically generate documenation from [Numpy style docstrings](https://numpydoc.readthedocs.io/en/latest/format.html).
-It will also pull `README.md` into the main page.
-
-Note that the documentation workflow `.github/workflows/documentation.yml` does not import dependencies, which will break the building process.
-To avoid this, make sure to list your external dependencies in `conf.py` in the `autodoc_mock_imports` variable.
+After training, you'll get:
+- `checkpoints/best_model.pth`: Best model weights
+- `training_curves.png`: Training progress
+- `comparison_results.png`: Visual comparison
+- FID score printed to console

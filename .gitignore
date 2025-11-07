@@ -1,3 +1,11 @@
+# Data
+data/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.tiff
+
 # Editors
 .vscode/
 .idea/
