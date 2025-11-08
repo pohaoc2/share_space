@@ -17,7 +17,7 @@ class Sim2ExpModel(nn.Module):
                 'embed_dim': encoder_config['embed_dim'],
                 'img_size': encoder_config['img_size'],
                 'patch_size': encoder_config['patch_size'],
-                'out_chans': encoder_config['in_chans']
+                'out_chans': encoder_config['out_chans']
             }
         
         if decoder_type == 'conv':

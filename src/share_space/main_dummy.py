@@ -11,15 +11,7 @@ from share_space.loss import Sim2ExpLoss
 from share_space.dataset import get_dummy_dataloaders, get_real_dataloaders
 from share_space.evaluation import MetricsEvaluator
 
-state_names = {
-    1: 'OTHER',
-    2: 'INFLAMMATORY',
-    3: 'HEALTHY_EPITHELIAL',
-    4: 'DYSPLASTIC/MALIGNANT',
-    5: 'FIBROBLAST',
-    6: 'MUSCLE',
-    7: 'ENDOTHELIAL'
-}
+
 def main(args):
     # Set device
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -86,13 +78,12 @@ def main(args):
     
     # Create dataloaders
     print("Creating dataloaders...")
-    train_loader, val_loader = get_real_dataloaders(
-        exp_dir=args.exp_dir,
-        sim_dir=args.sim_dir,
+    train_loader, val_loader = get_dummy_dataloaders(
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        img_size=args.img_size,
-        train_split=args.train_split
+        train_samples=args.train_samples,
+        val_samples=args.val_samples,
+        img_size=args.img_size
     )
 
     # Visualize the first batch of the training data
@@ -196,28 +187,24 @@ def main(args):
     n_viz = 3
     print(f"Visualizing {n_viz} samples of reconstructed images in the first batch of the validation data...")
     first_batch = next(iter(val_loader))
-    fig, ax = plt.subplots(n_viz, 10, figsize=(2 * 8, 2 * n_viz))
+    fig, ax = plt.subplots(n_viz, 3, figsize=(5, 5 * n_viz / 3))
     for i in range(n_viz):
-        exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
-        sim_img = first_batch['simulation'][i]
-        print(f"Simulation image shape: {sim_img.shape}")
-        pred_imgs = trainer.forward_pass(sim_img[torch.newaxis, ...], None)['student_recon'][0].permute(1, 2, 0).cpu().detach().numpy()
-        ax[i, 0].imshow(exp_img)
-        ax[i, 1].imshow(pred_imgs)
+        sim_imgs = first_batch['simulation'][i]
+        exp_imgs = first_batch['experimental'][i]
+        pred_imgs = trainer.forward_pass(sim_imgs.unsqueeze(0), None)['student_recon'][0]
+        print(f"Simulation image shape: {sim_imgs.unsqueeze(0).shape}")
+        asd()
+        # Remove batch dimension for plotting
+        ax[i, 0].imshow(exp_imgs.permute(1, 2, 0).cpu().numpy())
+        ax[i, 1].imshow(sim_imgs.permute(1, 2, 0).cpu().numpy())
+        ax[i, 2].imshow(pred_imgs.permute(1, 2, 0).cpu().detach().numpy())
+        ax[i, 0].axis('off')
         ax[i, 1].axis('off')
-        if i == 0:
-            ax[i, 1].set_title('Reconstructed\n(Output)', loc='center')
-        for j in range(1, 9):
-            print(f"Simulation image shape: {sim_img.shape}")
-            ax[i, j+1].imshow(sim_img.permute(1, 2, 0).cpu().detach().numpy()[..., j-1])
-            ax[i, j+1].axis('off')
-            if i == 0 and j == 1:
-                ax[i, j+1].set_title(f'Cell Count', loc='center')
-            elif i == 0:
-                ax[i, j+1].set_title(f'{state_names[j-1]}', loc='center')
+        ax[i, 2].axis('off')
         if i == 0:
             ax[i, 0].set_title('Experimental\n(Target)', loc='center')
-        ax[i, 0].axis('off')
+            ax[i, 1].set_title('Simulation\n(Input)', loc='center')
+            ax[i, 2].set_title('Reconstructed\n(Output)', loc='center')
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.1, wspace=0.1)
     plt.show()
