@@ -147,7 +147,6 @@ def main(args):
             scheduler.step()
         
         print("Training complete!")
-    
     # Final evaluation
     if 1:
         print("\nFinal evaluation...")
@@ -227,8 +226,8 @@ if __name__ == '__main__':
     parser.add_argument('--mask_weight', type=float, default=1.0)
     
     # Data
-    parser.add_argument('--train_samples', type=int, default=50000)
-    parser.add_argument('--val_samples', type=int, default=100)
+    parser.add_argument('--train_samples', type=int, default=50)
+    parser.add_argument('--val_samples', type=int, default=10)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--load_path', type=str, default='./checkpoints/best_model.pth')
     

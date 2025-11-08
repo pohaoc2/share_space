@@ -101,7 +101,7 @@ class TeacherStudentTrainer:
         # Forward pass
         outputs = self.forward_pass(sim_images, mask)
         # Compute losses
-        losses = loss_fn(outputs, exp_images, mask)
+        losses = loss_fn(outputs, exp_images, mask, patch_size)
         total_loss = sum(losses.values())
         
         # Backward

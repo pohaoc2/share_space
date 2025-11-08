@@ -6,6 +6,7 @@
 *.tiff
 *.pth
 *.json
+
 # Editors
 .vscode/
 .idea/

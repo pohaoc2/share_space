@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict
+from typing import Dict, Tuple
 
 class Sim2ExpLoss(nn.Module):
     """Combined loss for simulation to experimental translation"""
@@ -52,7 +52,7 @@ class Sim2ExpLoss(nn.Module):
         return loss
     
     def masked_reconstruction_loss(self, pred: torch.Tensor, target: torch.Tensor, 
-                                   mask: torch.Tensor, patch_size: int = 16) -> torch.Tensor:
+                                   mask: torch.Tensor, patch_size: Tuple[int, int]) -> torch.Tensor:
         """
         Reconstruction loss only on masked patches
         
@@ -68,14 +68,17 @@ class Sim2ExpLoss(nn.Module):
         mask = mask.float()
         
         B, C, H, W = pred.shape
-        p = patch_size
+        if isinstance(patch_size, int):
+            p_h = p_w = patch_size
+        else:
+            p_h, p_w = patch_size
         
         # Convert image to patches
-        pred_patches = pred.unfold(2, p, p).unfold(3, p, p)  # (B, C, H//p, W//p, p, p)
-        target_patches = target.unfold(2, p, p).unfold(3, p, p)
+        pred_patches = pred.unfold(2, p_h, p_h).unfold(3, p_w, p_w)  # (B, C, H//p, W//p, p, p)
+        target_patches = target.unfold(2, p_h, p_h).unfold(3, p_w, p_w)
         
-        pred_patches = pred_patches.permute(0, 2, 3, 1, 4, 5).reshape(B, -1, C * p * p)
-        target_patches = target_patches.permute(0, 2, 3, 1, 4, 5).reshape(B, -1, C * p * p)
+        pred_patches = pred_patches.permute(0, 2, 3, 1, 4, 5).reshape(B, -1, C * p_h * p_w)
+        target_patches = target_patches.permute(0, 2, 3, 1, 4, 5).reshape(B, -1, C * p_h * p_w)
         
         # Compute loss only on masked patches
         mask_expanded = mask.unsqueeze(-1).expand_as(pred_patches)
@@ -85,7 +88,7 @@ class Sim2ExpLoss(nn.Module):
         masked_diff = diff * mask_expanded
         
         # Average over masked elements
-        num_masked = mask.sum() * C * p * p
+        num_masked = mask.sum() * C * p_h * p_w
         if num_masked > 0:
             loss = masked_diff.sum() / num_masked
         else:
@@ -94,7 +97,7 @@ class Sim2ExpLoss(nn.Module):
         return loss
     
     def forward(self, outputs: Dict[str, torch.Tensor], target: torch.Tensor,
-                mask: torch.Tensor) -> Dict[str, torch.Tensor]:
+                mask: torch.Tensor, patch_size: Tuple[int, int]) -> Dict[str, torch.Tensor]:
         """
         Compute all losses
         
@@ -128,11 +131,6 @@ class Sim2ExpLoss(nn.Module):
         )
         
         # Masked reconstruction loss
-        # patch_size is ${img_size // (student_patches.shape[1] ** 0.5)}
-        patch_size = outputs['student_recon'].shape[1] // (outputs['student_patches'].shape[1] ** 0.5)
-        print(f"outputs['student_recon'].shape: {outputs['student_recon'].shape}")
-        print(f"patch_size: {patch_size}")
-        asd()
         losses['mask_recon'] = self.mask_weight * self.masked_reconstruction_loss(
             outputs['student_recon'], target, mask, patch_size
         )
