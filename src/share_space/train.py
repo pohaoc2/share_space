@@ -1,4 +1,4 @@
-# train.py
+# train.py (Updated with dtype fixes)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -22,8 +22,8 @@ class TeacherStudentTrainer:
         self.teacher_momentum = teacher_momentum
         self.center_momentum = center_momentum
         
-        # Center for teacher output (helps stabilize training)
-        self.register_center = torch.zeros(1, student_model.encoder.embed_dim).to(device)
+        # Center for teacher output (helps stabilize training) - ensure float32
+        self.register_center = torch.zeros(1, student_model.encoder.embed_dim, dtype=torch.float32).to(device)
     
     @torch.no_grad()
     def update_teacher(self):
@@ -50,6 +50,11 @@ class TeacherStudentTrainer:
         Returns:
             dict with reconstruction, features, etc.
         """
+        # Ensure float32
+        images = images.float()
+        if masks is not None:
+            masks = masks.float()
+        
         # Student forward
         student_recon, student_cls, student_patches = self.student(images, masks)
         
@@ -67,23 +72,34 @@ class TeacherStudentTrainer:
         }
     
     def train_step(self, batch: Dict[str, torch.Tensor], optimizer: torch.optim.Optimizer,
-                   loss_fn, mask_ratio: float = 0.5) -> Dict[str, float]:
+                loss_fn, mask_ratio: float = 0.5) -> Dict[str, float]:
         """Single training step"""
         self.student.train()
         self.teacher.eval()
         
-        sim_images = batch['simulation'].to(self.device)
-        exp_images = batch['experimental'].to(self.device)
-        
+        sim_images = batch['simulation'].to(self.device).float()  # Ensure float32
+        exp_images = batch['experimental'].to(self.device).float()  # Ensure float32
         B, C, H, W = sim_images.shape
-        num_patches = (H // self.student.encoder.patch_embed.patch_size) ** 2
         
-        # Create random mask
-        mask = torch.rand(B, num_patches, device=self.device) < mask_ratio
+        # Handle both int and tuple patch_size
+        patch_embed = self.student.encoder.patch_embed
+        patch_size = patch_embed.patch_size
+        
+        # Calculate number of patches correctly for non-square images
+        if isinstance(patch_size, int):
+            patch_h = patch_w = patch_size
+        else:
+            patch_h, patch_w = patch_size
+        
+        grid_h = H // patch_h
+        grid_w = W // patch_w
+        num_patches = grid_h * grid_w
+        
+        # Create random mask (ensure float32)
+        mask = (torch.rand(B, num_patches, device=self.device, dtype=torch.float32) < mask_ratio).float()
         
         # Forward pass
         outputs = self.forward_pass(sim_images, mask)
-        
         # Compute losses
         losses = loss_fn(outputs, exp_images, mask)
         total_loss = sum(losses.values())
@@ -91,6 +107,10 @@ class TeacherStudentTrainer:
         # Backward
         optimizer.zero_grad()
         total_loss.backward()
+        
+        # Gradient clipping (helps stability)
+        torch.nn.utils.clip_grad_norm_(self.student.parameters(), max_norm=1.0)
+        
         optimizer.step()
         
         # Update teacher

@@ -1,11 +1,11 @@
 # Data
-data/
 *.png
 *.jpg
 *.jpeg
 *.gif
 *.tiff
-
+*.pth
+*.json
 # Editors
 .vscode/
 .idea/

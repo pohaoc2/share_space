@@ -156,11 +156,11 @@ class MetricsEvaluator:
             ssim_scores.append(ssim_val)
         
         # Compute FID
-        print("Computing FID...")
-        fid_score = self.fid_calculator.compute_fid_from_loader(model, dataloader)
+        #print("Computing FID...")
+        #fid_score = self.fid_calculator.compute_fid_from_loader(model, dataloader)
         
         results = {
-            'fid': fid_score,
+            #'fid': fid_score,
             'psnr': np.mean(psnr_scores),
             'psnr_std': np.std(psnr_scores),
             'ssim': np.mean(ssim_scores),

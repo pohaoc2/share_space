@@ -2,8 +2,8 @@
 import torch
 import torch.nn as nn
 from typing import Tuple, Optional
-from models.vit import VisionTransformer
-from models.decoders import ConvDecoder, TransformerDecoder
+from share_space.models.vit import VisionTransformer
+from share_space.models.decoders import ConvDecoder, TransformerDecoder
 
 class Sim2ExpModel(nn.Module):
     """Complete model for simulation to experimental image translation"""

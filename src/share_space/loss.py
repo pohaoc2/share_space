@@ -19,7 +19,6 @@ class Sim2ExpLoss(nn.Module):
         # Ensure float32
         pred = pred.float()
         target = target.float()
-        
         l1_loss = F.l1_loss(pred, target)
         l2_loss = F.mse_loss(pred, target)
         return l1_loss + l2_loss
@@ -129,11 +128,14 @@ class Sim2ExpLoss(nn.Module):
         )
         
         # Masked reconstruction loss
-        patch_size = 16  # Assuming patch size of 16
+        # patch_size is ${img_size // (student_patches.shape[1] ** 0.5)}
+        patch_size = outputs['student_recon'].shape[1] // (outputs['student_patches'].shape[1] ** 0.5)
+        print(f"outputs['student_recon'].shape: {outputs['student_recon'].shape}")
+        print(f"patch_size: {patch_size}")
+        asd()
         losses['mask_recon'] = self.mask_weight * self.masked_reconstruction_loss(
             outputs['student_recon'], target, mask, patch_size
         )
-        
         return losses
 
 
