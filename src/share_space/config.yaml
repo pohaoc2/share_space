@@ -1,0 +1,41 @@
+# Model Architecture
+model:
+  in_chans: 8
+  out_chans: 3
+  img_size: 224
+  patch_size: 8
+  embed_dim: 64
+  depth: 2
+  num_heads: 2
+  decoder_type: conv  # Options: 'conv', 'transformer'
+
+# Training Parameters
+training:
+  eval_only: false #true #false
+  epochs: 20
+  batch_size: 32
+  learning_rate: 0.0001
+  weight_decay: 0.05
+  teacher_momentum: 0.996
+  mask_ratio: 0.5
+  train_split: 0.9
+
+# Loss Weights
+loss:
+  recon_weight: 1.0
+  distill_weight: 1.0
+  mask_weight: 1.0
+
+# Data Configuration
+data:
+  exp_dir: ../../data/exp
+  sim_dir: ../../data/sim
+  train_samples: 50
+  val_samples: 10
+  num_workers: 4
+
+# Checkpoint and Evaluation
+checkpoint:
+  load_path: ./checkpoints/best_model.pth
+  save_dir: ./checkpoints
+  eval_every: 4
