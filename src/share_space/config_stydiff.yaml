@@ -1,0 +1,44 @@
+# StyDiff Configuration File
+# Based on: "StyDiff: a refined style transfer method based on diffusion models"
+
+# Model configuration
+model:
+  img_size: 256
+  in_channels: 3
+  latent_channels: 4  # AutoKL latent channels
+  autokl_base_channels: 128
+  diffusion_model_channels: 256
+  num_embeddings: 8192  # For vector quantization
+  diffusion_timesteps: 1000
+
+# Data configuration
+data:
+  content_dir: './data/content'  # Directory with content images
+  style_dir: './data/style'      # Directory with style images
+  num_workers: 4
+
+# Training configuration
+training:
+  batch_size: 4
+  epochs: 100
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  train_split: 0.8
+  eval_only: false  # Set to true to only evaluate
+
+# Loss function weights
+# Based on paper's ablation study (Table 4)
+# Default: α=1.0, β=1.0, γ=1.0, δ=1.0
+loss:
+  content_weight: 1.0       # α - L_ImageLatent
+  style_weight: 1.0         # β - L_StyleLatent
+  element_weight: 1.0       # γ - L_Element
+  diffusion_weight: 1.0     # δ - L_diff
+  perceptual_weight: 0.1    # Additional perceptual loss
+  style_feature_weight: 1.0 # Additional style feature loss (Gram matrix)
+
+# Checkpoint configuration
+checkpoint:
+  save_dir: './checkpoints'
+  load_path: './checkpoints/best_model.pth'
+  eval_every: 5  # Evaluate every N epochs
