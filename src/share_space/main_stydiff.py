@@ -15,8 +15,9 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
 import numpy as np
-
-from stydiff.models import StyDiff, StyDiffLoss, StyDiffMetrics
+from share_space.losses import StyDiffLoss
+from share_space.metrics import StyDiffMetrics
+from share_space.stydiff import StyDiff
 
 
 # State names for visualization (from original code)
@@ -364,10 +365,25 @@ def main(config_path='config_stydiff.yaml'):
     )
     
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
-    
+
+    if True:
+        print("Visualizing first batch of the training data...")
+        first_batch = next(iter(train_loader))
+        n_samples = 5
+        fig, ax = plt.subplots(2, n_samples, figsize=(12, 6))
+        for i in range(n_samples):
+            print(first_batch['content'][i].permute(1, 2, 0).cpu().numpy().shape)
+            ax[0, i].imshow(first_batch['content'][i].permute(1, 2, 0).cpu().numpy())
+            ax[1, i].imshow(first_batch['style'][i].permute(1, 2, 0).cpu().numpy())
+            ax[0, i].axis('off')
+            ax[1, i].axis('off')
+        plt.tight_layout()
+        plt.savefig('stydiff_training_data.png', dpi=300, bbox_inches='tight')
+        plt.show()
+    asd()
     # Create metrics evaluator
     metrics_evaluator = StyDiffMetrics(device=device)
-    
+
     # Training loop
     if config['training'].get('eval_only', False):
         print("Loading best model for evaluation...")

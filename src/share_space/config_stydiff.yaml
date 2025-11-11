@@ -13,8 +13,8 @@ model:
 
 # Data configuration
 data:
-  content_dir: './data/content'  # Directory with content images
-  style_dir: './data/style'      # Directory with style images
+  content_dir: '../../data/sim'  # Directory with content images
+  style_dir: '../../data/exp'      # Directory with style images
   num_workers: 4
 
 # Training configuration
