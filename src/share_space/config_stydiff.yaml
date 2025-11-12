@@ -3,24 +3,28 @@
 
 # Model configuration
 model:
-  img_size: 256
-  in_channels: 3
+  img_size: 128
+  in_channels_content: 8
+  in_channels_style: 3
+  out_channels: 3
   latent_channels: 4  # AutoKL latent channels
-  autokl_base_channels: 128
-  diffusion_model_channels: 256
-  num_embeddings: 8192  # For vector quantization
-  diffusion_timesteps: 1000
+  autokl_base_channels: 64
+  diffusion_model_channels: 128
+  num_embeddings: 256  # For vector quantization
+  diffusion_timesteps: 50
 
 # Data configuration
 data:
-  content_dir: '../../data/sim'  # Directory with content images
-  style_dir: '../../data/exp'      # Directory with style images
+  exp_dir: ../../data/exp
+  sim_dir: ../../data/sim
+  train_samples: 50
+  val_samples: 10
   num_workers: 4
 
 # Training configuration
 training:
-  batch_size: 4
-  epochs: 100
+  batch_size: 32
+  epochs: 10
   learning_rate: 0.0001
   weight_decay: 0.0001
   train_split: 0.8
@@ -41,4 +45,4 @@ loss:
 checkpoint:
   save_dir: './checkpoints'
   load_path: './checkpoints/best_model.pth'
-  eval_every: 5  # Evaluate every N epochs
+  eval_every: 1  # Evaluate every N epochs

@@ -22,7 +22,9 @@ class StyDiff(nn.Module):
     def __init__(
         self,
         img_size=256,
-        in_channels=3,
+        in_channels_content=3,
+        in_channels_style=3,
+        out_channels=3,
         latent_channels=4,
         autokl_base_channels=128,
         diffusion_model_channels=256,
@@ -32,12 +34,17 @@ class StyDiff(nn.Module):
         super().__init__()
         
         self.img_size = img_size
-        self.in_channels = in_channels
+        self.in_channels_content = in_channels_content
+        self.in_channels_style = in_channels_style
+        self.out_channels = out_channels
         self.latent_channels = latent_channels
-        
+        # Use 1x1 conv to map content channels to style channels (works with 4D tensors)
+        self.map_content_style = nn.Conv2d(in_channels_content, in_channels_style, kernel_size=1)
         # AutoKL for encoding/decoding
         self.autokl = AutoKL(
-            in_channels=in_channels,
+            in_channels_content=in_channels_content,
+            in_channels_style=in_channels_style,
+            out_channels=out_channels,
             latent_channels=latent_channels,
             base_channels=autokl_base_channels,
             num_embeddings=num_embeddings
@@ -84,9 +91,7 @@ class StyDiff(nn.Module):
             adain_features: Features from AdaIN fusion
         """
         # Encode to latent space
-        content_latent, _ = self.autokl.encode(content_img)
-        style_latent, _ = self.autokl.encode(style_img)
-        
+        content_latent, style_latent, _, _ = self.autokl.encode(content_img, style_img)
         # Extract and fuse features using AdaIN
         adapted_features, content_features, style_features = self.adain_fusion(
             content_img, style_img
@@ -115,9 +120,10 @@ class StyDiff(nn.Module):
             - style_features: Original style features
         """
         # Encode images and get AdaIN features
+        # map content channels (B, C, H, W) to style channels (B, C, H, W)
+        content_img = self.map_content_style(content_img)
         content_latent, style_latent, adapted_features, content_features, style_features = \
             self.encode_images(content_img, style_img)
-        
         # Use the last (deepest) adapted feature as style conditioning
         # Resize to match latent size
         style_condition = adapted_features[-1]  # conv4_2 features
@@ -178,6 +184,7 @@ class StyDiff(nn.Module):
             Stylized image
         """
         # Encode images
+        content_img = self.map_content_style(content_img)
         content_latent, style_latent, adapted_features, _, _ = \
             self.encode_images(content_img, style_img)
         

@@ -188,18 +188,20 @@ class AutoKL(nn.Module):
     """
     Complete AutoKL model with encoder, decoder, and quantizer
     """
-    def __init__(self, in_channels=3, latent_channels=4, base_channels=128, num_embeddings=8192):
+    def __init__(self, in_channels_content=3, in_channels_style=3, out_channels=3, latent_channels=4, base_channels=128, num_embeddings=8192):
         super().__init__()
-        
-        self.encoder = AutoKLEncoder(in_channels, latent_channels, base_channels)
-        self.decoder = AutoKLDecoder(in_channels, latent_channels, base_channels)
+        self.encoder = AutoKLEncoder(in_channels_style, latent_channels, base_channels)
+        self.decoder = AutoKLDecoder(out_channels, latent_channels, base_channels)
         self.quantizer = VectorQuantizer(num_embeddings, latent_channels)
         
-    def encode(self, x):
+
+    def encode(self, x_content, x_style):
         """Encode image to latent space"""
-        z = self.encoder(x)
-        z_quantized, indices = self.quantizer(z)
-        return z_quantized, indices
+        z_content = self.encoder(x_content)
+        z_style = self.encoder(x_style)
+        z_quantized_content, indices_content = self.quantizer(z_content)
+        z_quantized_style, indices_style = self.quantizer(z_style)
+        return z_quantized_content, z_quantized_style, indices_content, indices_style
     
     def decode(self, z):
         """Decode from latent space to image"""

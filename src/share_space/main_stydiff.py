@@ -18,7 +18,7 @@ import numpy as np
 from share_space.losses import StyDiffLoss
 from share_space.metrics import StyDiffMetrics
 from share_space.stydiff import StyDiff
-
+from share_space.dataset import get_real_dataloaders
 
 # State names for visualization (from original code)
 state_names = {
@@ -30,94 +30,6 @@ state_names = {
     6: 'MUSCLE',
     7: 'ENDOTHELIAL'
 }
-
-
-class StyleTransferDataset(Dataset):
-    """
-    Dataset for style transfer
-    Pairs content and style images
-    """
-    def __init__(self, content_dir, style_dir, img_size=256, transform=None):
-        self.content_dir = Path(content_dir)
-        self.style_dir = Path(style_dir)
-        self.img_size = img_size
-        
-        # Get all image files
-        self.content_files = sorted(list(self.content_dir.glob('*.png')) + 
-                                   list(self.content_dir.glob('*.jpg')))
-        self.style_files = sorted(list(self.style_dir.glob('*.png')) + 
-                                 list(self.style_dir.glob('*.jpg')))
-        
-        if transform is None:
-            self.transform = transforms.Compose([
-                transforms.Resize((img_size, img_size)),
-                transforms.ToTensor(),
-            ])
-        else:
-            self.transform = transform
-    
-    def __len__(self):
-        return min(len(self.content_files), len(self.style_files))
-    
-    def __getitem__(self, idx):
-        # Load content image
-        content_img = Image.open(self.content_files[idx]).convert('RGB')
-        content_tensor = self.transform(content_img)
-        
-        # Load style image (can randomize or pair differently)
-        style_idx = idx % len(self.style_files)
-        style_img = Image.open(self.style_files[style_idx]).convert('RGB')
-        style_tensor = self.transform(style_img)
-        
-        return {
-            'content': content_tensor,
-            'style': style_tensor
-        }
-
-
-def get_dataloaders(content_dir, style_dir, batch_size=4, num_workers=4, 
-                   img_size=256, train_split=0.8):
-    """
-    Create train and validation dataloaders
-    
-    Args:
-        content_dir: Directory with content images
-        style_dir: Directory with style images
-        batch_size: Batch size
-        num_workers: Number of data loading workers
-        img_size: Image size
-        train_split: Train/val split ratio
-    
-    Returns:
-        train_loader, val_loader
-    """
-    dataset = StyleTransferDataset(content_dir, style_dir, img_size=img_size)
-    
-    # Split into train and val
-    train_size = int(train_split * len(dataset))
-    val_size = len(dataset) - train_size
-    
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        dataset, [train_size, val_size]
-    )
-    
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True
-    )
-    
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True
-    )
-    
-    return train_loader, val_loader
 
 
 def load_config(config_path='config.yaml'):
@@ -157,18 +69,18 @@ def train_epoch(model, dataloader, optimizer, criterion, device, epoch):
     num_batches = 0
     
     for batch_idx, batch in enumerate(dataloader):
-        content_img = batch['content'].to(device)
-        style_img = batch['style'].to(device)
+        content_img = batch['simulation'].to(device)
+        style_img = batch['experimental'].to(device)
         
         # Forward pass
         outputs = model(content_img, style_img, return_intermediates=True)
         
         # Get output image and encode it for loss calculation
         output_img = outputs['output']
-        output_latent, _ = model.autokl.encode(output_img)
+        output_latent, _, _, _ = model.autokl.encode(output_img, style_img)
         
         # Extract VGG features for output
-        _, _, output_features = model.adain_fusion.vgg_extractor(
+        output_features = model.adain_fusion.vgg_extractor(
             (output_img - torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)) / 
             torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
         )
@@ -183,7 +95,7 @@ def train_epoch(model, dataloader, optimizer, criterion, device, epoch):
             noise_target=outputs['noise_target'],
             content_features=outputs['content_features'],
             style_features=outputs['style_features'],
-            output_features=[output_features]
+            output_features=output_features
         )
         
         # Backward pass
@@ -238,8 +150,8 @@ def evaluate(model, dataloader, metrics_evaluator, device):
         if batch_idx >= 20:  # Limit evaluation to save time
             break
         
-        content_img = batch['content'].to(device)
-        style_img = batch['style'].to(device)
+        content_img = batch['simulation'].to(device)
+        style_img = batch['experimental'].to(device)
         
         # Generate stylized image
         generated_img = model.transfer_style(content_img, style_img, num_inference_steps=20)
@@ -248,7 +160,7 @@ def evaluate(model, dataloader, metrics_evaluator, device):
         generated_img = torch.clamp(generated_img, 0, 1)
         
         # Calculate metrics
-        metrics = metrics_evaluator.evaluate_batch(content_img, style_img, generated_img)
+        metrics = metrics_evaluator.evaluate_batch(model.map_content_style(content_img), style_img, generated_img)
         
         for key in all_metrics:
             all_metrics[key].append(metrics[key])
@@ -275,31 +187,35 @@ def visualize_results(model, dataloader, device, save_path='stydiff_results.png'
     model.eval()
     
     batch = next(iter(dataloader))
-    content_imgs = batch['content'][:num_samples].to(device)
-    style_imgs = batch['style'][:num_samples].to(device)
+    content_imgs = batch['simulation'][:num_samples].to(device)
+    style_imgs = batch['experimental'][:num_samples].to(device)
     
     with torch.no_grad():
         generated_imgs = model.transfer_style(content_imgs, style_imgs, num_inference_steps=20)
         generated_imgs = torch.clamp(generated_imgs, 0, 1)
     
     # Create visualization
-    fig, axes = plt.subplots(num_samples, 3, figsize=(12, 4 * num_samples))
+    fig, axes = plt.subplots(num_samples, 4, figsize=(12, 3 * num_samples))
     
     for i in range(num_samples):
         # Content
-        axes[i, 0].imshow(content_imgs[i].cpu().permute(1, 2, 0).numpy())
+        print(f"content_imgs shape: {content_imgs[i].shape}")
+        axes[i, 0].imshow(content_imgs[i].cpu().permute(1, 2, 0)[..., 0].numpy())
         axes[i, 0].set_title('Content' if i == 0 else '')
         axes[i, 0].axis('off')
-        
-        # Style
-        axes[i, 1].imshow(style_imgs[i].cpu().permute(1, 2, 0).numpy())
-        axes[i, 1].set_title('Style' if i == 0 else '')
+        # Mapped content
+        axes[i, 1].imshow(model.map_content_style(content_imgs[i]).cpu().permute(1, 2, 0).detach().numpy())
+        axes[i, 1].set_title('Content' if i == 0 else '')
         axes[i, 1].axis('off')
+        # Style
+        axes[i, 2].imshow(style_imgs[i].cpu().permute(1, 2, 0).numpy())
+        axes[i, 2].set_title('Style' if i == 0 else '')
+        axes[i, 2].axis('off')
         
         # Generated
-        axes[i, 2].imshow(generated_imgs[i].cpu().permute(1, 2, 0).numpy())
-        axes[i, 2].set_title('Generated' if i == 0 else '')
-        axes[i, 2].axis('off')
+        axes[i, 3].imshow(generated_imgs[i].cpu().permute(1, 2, 0).numpy())
+        axes[i, 3].set_title('Generated' if i == 0 else '')
+        axes[i, 3].axis('off')
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -319,7 +235,9 @@ def main(config_path='config_stydiff.yaml'):
     print("Creating StyDiff model...")
     model = StyDiff(
         img_size=config['model']['img_size'],
-        in_channels=config['model']['in_channels'],
+        in_channels_content=config['model']['in_channels_content'],
+        in_channels_style=config['model']['in_channels_style'],
+        out_channels=config['model']['out_channels'],
         latent_channels=config['model'].get('latent_channels', 4),
         autokl_base_channels=config['model'].get('autokl_base_channels', 128),
         diffusion_model_channels=config['model'].get('diffusion_model_channels', 256),
@@ -355,9 +273,9 @@ def main(config_path='config_stydiff.yaml'):
     
     # Create dataloaders
     print("Creating dataloaders...")
-    train_loader, val_loader = get_dataloaders(
-        content_dir=config['data']['content_dir'],
-        style_dir=config['data']['style_dir'],
+    train_loader, val_loader = get_real_dataloaders(
+        exp_dir=config['data']['exp_dir'],
+        sim_dir=config['data']['sim_dir'],
         batch_size=config['training']['batch_size'],
         num_workers=config['data']['num_workers'],
         img_size=config['model']['img_size'],
@@ -365,22 +283,6 @@ def main(config_path='config_stydiff.yaml'):
     )
     
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
-
-    if True:
-        print("Visualizing first batch of the training data...")
-        first_batch = next(iter(train_loader))
-        n_samples = 5
-        fig, ax = plt.subplots(2, n_samples, figsize=(12, 6))
-        for i in range(n_samples):
-            print(first_batch['content'][i].permute(1, 2, 0).cpu().numpy().shape)
-            ax[0, i].imshow(first_batch['content'][i].permute(1, 2, 0).cpu().numpy())
-            ax[1, i].imshow(first_batch['style'][i].permute(1, 2, 0).cpu().numpy())
-            ax[0, i].axis('off')
-            ax[1, i].axis('off')
-        plt.tight_layout()
-        plt.savefig('stydiff_training_data.png', dpi=300, bbox_inches='tight')
-        plt.show()
-    asd()
     # Create metrics evaluator
     metrics_evaluator = StyDiffMetrics(device=device)
 

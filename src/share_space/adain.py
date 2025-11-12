@@ -162,7 +162,6 @@ class AdaINFeatureFusion(nn.Module):
         # Normalize images for VGG (ImageNet normalization)
         mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(content_image.device)
         std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(content_image.device)
-        
         content_normalized = (content_image - mean) / std
         style_normalized = (style_image - mean) / std
         
