@@ -42,7 +42,6 @@ class StyDiff(nn.Module):
         self.map_content_style = nn.Conv2d(in_channels_content, in_channels_style, kernel_size=1)
         # AutoKL for encoding/decoding
         self.autokl = AutoKL(
-            in_channels_content=in_channels_content,
             in_channels_style=in_channels_style,
             out_channels=out_channels,
             latent_channels=latent_channels,
@@ -91,7 +90,8 @@ class StyDiff(nn.Module):
             adain_features: Features from AdaIN fusion
         """
         # Encode to latent space
-        content_latent, style_latent, _, _ = self.autokl.encode(content_img, style_img)
+        content_latent, _ = self.autokl.encode(content_img)
+        style_latent, _ = self.autokl.encode(style_img)
         # Extract and fuse features using AdaIN
         adapted_features, content_features, style_features = self.adain_fusion(
             content_img, style_img
@@ -126,7 +126,7 @@ class StyDiff(nn.Module):
             self.encode_images(content_img, style_img)
         # Use the last (deepest) adapted feature as style conditioning
         # Resize to match latent size
-        style_condition = adapted_features[-1]  # conv4_2 features
+        style_condition = adapted_features[-1]  # conv4_2 features -- global style features
         
         # Resize style condition to match latent spatial dimensions
         if style_condition.shape[2:] != content_latent.shape[2:]:

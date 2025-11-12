@@ -77,7 +77,7 @@ def train_epoch(model, dataloader, optimizer, criterion, device, epoch):
         
         # Get output image and encode it for loss calculation
         output_img = outputs['output']
-        output_latent, _, _, _ = model.autokl.encode(output_img, style_img)
+        output_latent, _ = model.autokl.encode(output_img)
         
         # Extract VGG features for output
         output_features = model.adain_fusion.vgg_extractor(
