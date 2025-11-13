@@ -6,7 +6,7 @@ authors = [
     {name = "Po-Hao Chiu",email = "pohaoc2@uw.edu"}
 ]
 readme = "README.md"
-requires-python = ">=3.13,<3.15"
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "numpy (>=2.3.4,<3.0.0)",
     "torch (>=2.9.0,<3.0.0)",
