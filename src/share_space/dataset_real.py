@@ -1,7 +1,7 @@
 import os
 from typing import Optional, Tuple
 from pathlib import Path
-
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms as T
@@ -13,18 +13,18 @@ class SimExpPairedDataset(Dataset):
     """
     Dataset for paired simulation (WikiArt) and experimental (COCO) images.
     
-    This creates pseudo-pairs by matching images from two different domains.
-    For style transfer tasks, we pair content images (COCO) with style images (WikiArt).
+    Each content image (COCO) is paired with a randomly selected style image (WikiArt).
+    When content images outnumber style images, style images are reused with different
+    content images through random sampling.
     """
     
     def __init__(
         self,
-        exp_dir: str = "coco/train2017",  # COCO images directory
-        sim_dir: str = "wikiart/images",   # WikiArt images directory
+        exp_dir: str = "coco/train2017",  # COCO images directory (content)
+        sim_dir: str = "wikiart/images",   # WikiArt images directory (style)
         img_size: int = 224,
         transform: Optional[T.Compose] = None,
-        pairing_strategy: str = "random",  # "random", "ordered", or "fixed"
-        seed: int = 42
+        seed: Optional[int] = None  # If provided, creates reproducible random pairs
     ):
         """
         Args:
@@ -32,16 +32,11 @@ class SimExpPairedDataset(Dataset):
             sim_dir: Directory containing WikiArt images (simulation/style domain)
             img_size: Target image size for resizing
             transform: Optional custom transform
-            pairing_strategy: How to pair images across domains
-                - "random": Random pairing on each epoch
-                - "ordered": Sequential pairing (deterministic)
-                - "fixed": Fixed random pairing (using seed)
-            seed: Random seed for reproducible pairing
+            seed: Optional random seed for reproducible pairing (if None, truly random each time)
         """
         self.exp_dir = Path(exp_dir)
         self.sim_dir = Path(sim_dir)
         self.img_size = img_size
-        self.pairing_strategy = pairing_strategy
         self.seed = seed
         
         # Get all image files from both domains
@@ -53,17 +48,19 @@ class SimExpPairedDataset(Dataset):
         if len(self.sim_images) == 0:
             raise ValueError(f"No images found in simulation directory: {sim_dir}")
         
-        print(f"Found {len(self.exp_images)} COCO images")
-        print(f"Found {len(self.sim_images)} WikiArt images")
+        print(f"Found {len(self.exp_images)} COCO images (content)")
+        print(f"Found {len(self.sim_images)} WikiArt images (style)")
         
-        # Create pairing based on strategy
-        if pairing_strategy == "fixed":
-            random.seed(seed)
-            self.sim_indices = random.sample(
-                range(len(self.sim_images)), 
-                len(self.exp_images)
-            ) if len(self.sim_images) >= len(self.exp_images) else \
-               [random.randint(0, len(self.sim_images)-1) for _ in range(len(self.exp_images))]
+        # Create random pairing: each content image gets a random style image
+        if seed is not None:
+            # Fixed random pairing for reproducibility
+            rng = np.random.RandomState(seed)
+            self.style_indices = rng.randint(0, len(self.sim_images), size=len(self.exp_images))
+            print(f"Created fixed random pairing with seed={seed}")
+        else:
+            # Will generate random pairs on-the-fly each epoch
+            self.style_indices = None
+            print("Using dynamic random pairing (changes each epoch)")
         
         # Default transform if none provided
         if transform is None:
@@ -88,17 +85,8 @@ class SimExpPairedDataset(Dataset):
         
         return sorted(image_files)
     
-    def _get_sim_index(self, idx: int) -> int:
-        """Get the simulation image index based on pairing strategy."""
-        if self.pairing_strategy == "fixed":
-            return self.sim_indices[idx]
-        elif self.pairing_strategy == "ordered":
-            return idx % len(self.sim_images)
-        else:  # random
-            return random.randint(0, len(self.sim_images) - 1)
-    
     def __len__(self) -> int:
-        """Dataset length is determined by the experimental (COCO) dataset."""
+        """Dataset length is determined by the content (COCO) dataset."""
         return len(self.exp_images)
     
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -108,14 +96,21 @@ class SimExpPairedDataset(Dataset):
         Returns:
             Tuple of (exp_image, sim_image) tensors
             - exp_image: COCO image (content/experimental domain)
-            - sim_image: WikiArt image (style/simulation domain)
+            - sim_image: WikiArt image (style/simulation domain), randomly selected
         """
         # Load experimental (COCO) image
         exp_path = self.exp_images[idx]
         exp_image = Image.open(exp_path).convert('RGB')
         
+        # Get style image index
+        if self.style_indices is not None:
+            # Use pre-computed fixed random pairing
+            sim_idx = int(self.style_indices[idx])
+        else:
+            # Generate random pairing on-the-fly
+            sim_idx = random.randint(0, len(self.sim_images) - 1)
+        
         # Load simulation (WikiArt) image
-        sim_idx = self._get_sim_index(idx)
         sim_path = self.sim_images[sim_idx]
         sim_image = Image.open(sim_path).convert('RGB')
         
@@ -127,8 +122,27 @@ class SimExpPairedDataset(Dataset):
     
     def get_image_paths(self, idx: int) -> Tuple[str, str]:
         """Get the file paths for a given index (useful for debugging)."""
-        sim_idx = self._get_sim_index(idx)
+        if self.style_indices is not None:
+            sim_idx = int(self.style_indices[idx])
+        else:
+            # For dynamic pairing, just show an example (will be different when actually loaded)
+            sim_idx = random.randint(0, len(self.sim_images) - 1)
+        
         return str(self.exp_images[idx]), str(self.sim_images[sim_idx])
+    
+    def reshuffle_styles(self, seed: Optional[int] = None):
+        """
+        Reshuffle the style pairing (useful between epochs for variety).
+        Only works if the dataset was initialized with a seed.
+        """
+        if seed is None:
+            seed = self.seed if self.seed is not None else random.randint(0, 2**31 - 1)
+        
+        rng = np.random.RandomState(seed)
+        self.style_indices = rng.randint(0, len(self.sim_images), size=len(self.exp_images))
+        print(f"Reshuffled style pairing with seed={seed}")
+
+
 
 def get_real_dataloaders(
     exp_dir: str = "exp",
@@ -206,7 +220,6 @@ if __name__ == "__main__":
         exp_dir="../../data/coco/val2017",
         sim_dir="../../data/wikiart/train_2",
         img_size=224,
-        pairing_strategy="fixed",
         seed=42
     )
     

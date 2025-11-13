@@ -69,9 +69,10 @@ def train_epoch(model, dataloader, optimizer, criterion, device, epoch):
     num_batches = 0
     
     for batch_idx, batch in enumerate(dataloader):
-        content_img = batch['simulation'].to(device)
-        style_img = batch['experimental'].to(device)
-        
+        # content_img = batch['simulation'].to(device)
+        # style_img = batch['experimental'].to(device)
+        content_img = batch[0].to(device)
+        style_img = batch[1].to(device)
         # Forward pass
         outputs = model(content_img, style_img, return_intermediates=True)
         
@@ -203,8 +204,15 @@ def visualize_results(model, dataloader, device, save_path='stydiff_results.png'
     
     for i in range(num_samples):
         # Content
+        print(f"mean of content_imgs[i]: {content_imgs[i].mean()}")
+        print(f"std of content_imgs[i]: {content_imgs[i].std()}")
         print(f"content_imgs shape: {content_imgs[i].shape}")
-        axes[i, 0].imshow(content_imgs[i].cpu().permute(1, 2, 0)[..., 0].numpy())
+        # Reverse transform: T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        content_imgs[i] = content_imgs[i] * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1) + torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        content_imgs[i] = torch.clamp(content_imgs[i], 0, 1)
+        style_imgs[i] = style_imgs[i] * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1) + torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        style_imgs[i] = torch.clamp(style_imgs[i], 0, 1)
+        axes[i, 0].imshow(content_imgs[i].cpu().permute(1, 2, 0).numpy())
         axes[i, 0].set_title('Content' if i == 0 else '')
         axes[i, 0].axis('off')
         # Mapped content
@@ -292,21 +300,33 @@ def main(config_path='config_stydiff.yaml'):
         train_split=config['training']['train_split']
     )
     # Visualize the first batch of the training data
-    if 0:#True:
+    if 1:
         print("Visualizing first batch of the training data...")
         first_batch = next(iter(train_loader))
-        fig, ax = plt.subplots(2, 5, figsize=(18, 9))
-        for i in range(5):
+        n_samples = 8
+        fig, ax = plt.subplots(2, n_samples, figsize=(n_samples*2, 4))
+        for i in range(n_samples):
+            # Reverse transform: T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            first_batch[0][i] = first_batch[0][i] * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1) + torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+            first_batch[0][i] = torch.clamp(first_batch[0][i], 0, 1)
+            first_batch[1][i] = first_batch[1][i] * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1) + torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+            first_batch[1][i] = torch.clamp(first_batch[1][i], 0, 1)
             ax[0, i].imshow(first_batch[0][i].permute(1, 2, 0).cpu().numpy())
             ax[1, i].imshow(first_batch[1][i].permute(1, 2, 0).cpu().numpy())
-            ax[0, i].axis('off')
-            ax[1, i].axis('off')
-        plt.show()
+            if i == 0:
+                # Keep y-axis visible for first column to show labels
+                ax[0, i].set_ylabel("COCO", rotation=90, fontsize=12)
+                ax[1, i].set_ylabel("WikiArt", rotation=90, fontsize=12)
+                ax[0, i].tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
+                ax[1, i].tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
+            else:
+                ax[0, i].axis('off')
+                ax[1, i].axis('off')
         plt.tight_layout()
+        plt.show()
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     # Create metrics evaluator
     metrics_evaluator = StyDiffMetrics(device=device)
-
     # Training loop
     if config['training'].get('eval_only', False):
         print("Loading best model for evaluation...")
@@ -386,18 +406,19 @@ def main(config_path='config_stydiff.yaml'):
             plt.show()
     
     # Final evaluation
-    print("\nFinal evaluation...")
-    final_metrics = evaluate(model, val_loader, metrics_evaluator, device)
-    print(f"Final metrics: {final_metrics}")
-    
-    # Save final metrics
-    metrics_path = Path(config['checkpoint']['save_dir']) / 'final_metrics.json'
-    metrics_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(metrics_path, 'w') as f:
-        json.dump(final_metrics, f, indent=2)
+    if 0:
+        print("\nFinal evaluation...")
+        final_metrics = evaluate(model, val_loader, metrics_evaluator, device)
+        print(f"Final metrics: {final_metrics}")
+        
+        # Save final metrics
+        metrics_path = Path(config['checkpoint']['save_dir']) / 'final_metrics.json'
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(metrics_path, 'w') as f:
+            json.dump(final_metrics, f, indent=2)
     
     # Visualize results
-    print("\nGenerating visualization...")
+
     visualize_results(
         model, val_loader, device,
         save_path='stydiff_results.png',
