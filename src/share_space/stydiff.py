@@ -29,7 +29,8 @@ class StyDiff(nn.Module):
         autokl_base_channels=128,
         diffusion_model_channels=256,
         num_embeddings=8192,
-        diffusion_timesteps=1000
+        diffusion_timesteps=1000,
+        unet_config=None
     ):
         super().__init__()
         
@@ -53,14 +54,15 @@ class StyDiff(nn.Module):
         self.adain_fusion = AdaINFeatureFusion()
         
         # Diffusion model for generation
-        unet_config = {
+        if unet_config is None:
+            unet_config = {
             'in_channels': latent_channels,
             'out_channels': latent_channels,
             'model_channels': diffusion_model_channels,
             'num_res_blocks': 2,
-            'attention_resolutions': [8, 16],
-            'channel_mult': (1, 2, 4, 4),
-            'num_heads': 8
+            'attention_resolutions': [4, 8],
+            'channel_mult': (1, 2, 4),
+            'num_heads': 4
         }
         
         self.diffusion = DiffusionModel(

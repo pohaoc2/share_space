@@ -197,7 +197,7 @@ class SimExpPairedDataset(Dataset):
         
         # Get all experimental images
         exp_images = sorted(self.exp_dir.glob("train_*.png"))
-        for exp_path in exp_images[:100]:
+        for exp_path in exp_images[:]:
             # Extract the base name: train_{number}_{sub_image_number}
             match = re.match(r'train_(\d+)_(\d+)\.png', exp_path.name)
             if not match:

@@ -65,19 +65,21 @@ class AutoKLEncoder(nn.Module):
         self.down_blocks = nn.ModuleList([
             DownBlock(base_channels, base_channels),
             DownBlock(base_channels, base_channels * 2),
-            DownBlock(base_channels * 2, base_channels * 4),
-            DownBlock(base_channels * 4, base_channels * 4),
+            DownBlock(base_channels * 2, base_channels * 2),
+            #DownBlock(base_channels * 4, base_channels * 4),
         ])
         
         # Middle residual blocks
         self.mid_blocks = nn.ModuleList([
-            ResidualBlock(base_channels * 4),
-            ResidualBlock(base_channels * 4),
+            #ResidualBlock(base_channels * 4),
+            #ResidualBlock(base_channels * 4),
+            ResidualBlock(base_channels * 2),
+            ResidualBlock(base_channels * 2),
         ])
         
         # Output layers
-        self.norm_out = nn.GroupNorm(32, base_channels * 4)
-        self.conv_out = nn.Conv2d(base_channels * 4, latent_channels, 3, padding=1)
+        self.norm_out = nn.GroupNorm(32, base_channels * 2)
+        self.conv_out = nn.Conv2d(base_channels * 2, latent_channels, 3, padding=1)
         
     def forward(self, x):
         # Initial conv
@@ -109,18 +111,20 @@ class AutoKLDecoder(nn.Module):
         self.latent_channels = latent_channels
         
         # Input convolution
-        self.conv_in = nn.Conv2d(latent_channels, base_channels * 4, 3, padding=1)
+        self.conv_in = nn.Conv2d(latent_channels, base_channels * 2, 3, padding=1)
         
         # Middle residual blocks
         self.mid_blocks = nn.ModuleList([
-            ResidualBlock(base_channels * 4),
-            ResidualBlock(base_channels * 4),
+            #ResidualBlock(base_channels * 4),
+            #ResidualBlock(base_channels * 4),
+            ResidualBlock(base_channels * 2),
+            ResidualBlock(base_channels * 2),
         ])
         
         # Upsampling path
         self.up_blocks = nn.ModuleList([
-            UpBlock(base_channels * 4, base_channels * 4),
-            UpBlock(base_channels * 4, base_channels * 2),
+            #UpBlock(base_channels * 4, base_channels * 4),
+            UpBlock(base_channels * 2, base_channels * 2),
             UpBlock(base_channels * 2, base_channels),
             UpBlock(base_channels, base_channels),
         ])

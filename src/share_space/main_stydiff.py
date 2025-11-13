@@ -205,7 +205,7 @@ def visualize_results(model, dataloader, device, save_path='stydiff_results.png'
         axes[i, 0].axis('off')
         # Mapped content
         axes[i, 1].imshow(model.map_content_style(content_imgs[i]).cpu().permute(1, 2, 0).detach().numpy())
-        axes[i, 1].set_title('Content' if i == 0 else '')
+        axes[i, 1].set_title('Content (mapped)' if i == 0 else '')
         axes[i, 1].axis('off')
         # Style
         axes[i, 2].imshow(style_imgs[i].cpu().permute(1, 2, 0).numpy())
@@ -230,8 +230,8 @@ def main(config_path='config_stydiff.yaml'):
     # Set device
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Using device: {device}")
-    
     # Create model
+    print(config['model'].get('unet_config', None))
     print("Creating StyDiff model...")
     model = StyDiff(
         img_size=config['model']['img_size'],
@@ -242,11 +242,17 @@ def main(config_path='config_stydiff.yaml'):
         autokl_base_channels=config['model'].get('autokl_base_channels', 128),
         diffusion_model_channels=config['model'].get('diffusion_model_channels', 256),
         num_embeddings=config['model'].get('num_embeddings', 8192),
-        diffusion_timesteps=config['model'].get('diffusion_timesteps', 1000)
+        diffusion_timesteps=config['model'].get('diffusion_timesteps', 1000),
+        unet_config=config['model'].get('unet_config', None)
     ).to(device)
-    
-    print(f"Model parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
-    
+    # Print trainable and non-trainable parameters and total parameter count
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Trainable parameters: {trainable_params / 1e6:.2f}M")
+    print(f"Non-trainable parameters: {non_trainable_params / 1e6:.2f}M")
+    print(f"Total parameters: {total_params / 1e6:.2f}M")
+
     # Create loss function
     criterion = StyDiffLoss(
         content_weight=config['loss'].get('content_weight', 1.0),
