@@ -18,7 +18,7 @@ import numpy as np
 from share_space.losses import StyDiffLoss
 from share_space.metrics import StyDiffMetrics
 from share_space.stydiff import StyDiff
-from share_space.dataset import get_real_dataloaders
+from share_space.dataset_real import get_real_dataloaders
 
 # State names for visualization (from original code)
 state_names = {
@@ -150,8 +150,10 @@ def evaluate(model, dataloader, metrics_evaluator, device):
         if batch_idx >= 20:  # Limit evaluation to save time
             break
         
-        content_img = batch['simulation'].to(device)
-        style_img = batch['experimental'].to(device)
+        #content_img = batch['simulation'].to(device)
+        #style_img = batch['experimental'].to(device)
+        content_img = batch[0].to(device)
+        style_img = batch[1].to(device)
         
         # Generate stylized image
         generated_img = model.transfer_style(content_img, style_img, num_inference_steps=20)
@@ -187,8 +189,10 @@ def visualize_results(model, dataloader, device, save_path='stydiff_results.png'
     model.eval()
     
     batch = next(iter(dataloader))
-    content_imgs = batch['simulation'][:num_samples].to(device)
-    style_imgs = batch['experimental'][:num_samples].to(device)
+    #content_imgs = batch['simulation'][:num_samples].to(device)
+    #style_imgs = batch['experimental'][:num_samples].to(device)
+    content_imgs = batch[0][:num_samples].to(device)
+    style_imgs = batch[1][:num_samples].to(device)
     
     with torch.no_grad():
         generated_imgs = model.transfer_style(content_imgs, style_imgs, num_inference_steps=20)
@@ -287,7 +291,18 @@ def main(config_path='config_stydiff.yaml'):
         img_size=config['model']['img_size'],
         train_split=config['training']['train_split']
     )
-    
+    # Visualize the first batch of the training data
+    if 0:#True:
+        print("Visualizing first batch of the training data...")
+        first_batch = next(iter(train_loader))
+        fig, ax = plt.subplots(2, 5, figsize=(18, 9))
+        for i in range(5):
+            ax[0, i].imshow(first_batch[0][i].permute(1, 2, 0).cpu().numpy())
+            ax[1, i].imshow(first_batch[1][i].permute(1, 2, 0).cpu().numpy())
+            ax[0, i].axis('off')
+            ax[1, i].axis('off')
+        plt.show()
+        plt.tight_layout()
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     # Create metrics evaluator
     metrics_evaluator = StyDiffMetrics(device=device)

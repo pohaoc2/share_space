@@ -3,8 +3,8 @@
 
 # Model configuration
 model:
-  img_size: 128
-  in_channels_content: 8
+  img_size: 224
+  in_channels_content: 3
   in_channels_style: 3
   out_channels: 3
   latent_channels: 4  # AutoKL latent channels
@@ -24,14 +24,14 @@ model:
 
 # Data configuration
 data:
-  exp_dir: ../../data/exp
-  sim_dir: ../../data/sim
+  exp_dir: ../../data/coco/val2017
+  sim_dir: ../../data/wikiart/train_2
   num_workers: 4
 
 # Training configuration
 training:
   batch_size: 32
-  epochs: 10
+  epochs: 0
   learning_rate: 0.0001
   weight_decay: 0.0001
   train_split: 0.8

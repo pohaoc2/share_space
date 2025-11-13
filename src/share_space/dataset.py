@@ -281,7 +281,7 @@ class SimExpPairedDataset(Dataset):
         
         # Combine: (1, H, W) + (7, H, W) = (8, H, W)
         sim_tensor = torch.cat([sim_count_tensor, sim_state_onehot], dim=0)
-        
+        sim_tensor = sim_tensor[:1]
         return {
             'experimental': exp_tensor,      # (3, H, W), RGB normalized to [-1, 1]
             'simulation': sim_tensor,        # (8, H, W), count + 7 one-hot state channels
