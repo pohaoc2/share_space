@@ -217,7 +217,7 @@ class StyDiff(nn.Module):
         )
         
         # Alternatively, use the fused latent directly for faster inference
-        # generated_latent = fused_latent
+        generated_latent = fused_latent
         
         # Decode to image
         output = self.autokl.decode(generated_latent)

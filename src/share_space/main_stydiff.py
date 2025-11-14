@@ -196,7 +196,7 @@ def visualize_results(model, dataloader, device, save_path='stydiff_results.png'
     style_imgs = batch[1][:num_samples].to(device)
     
     with torch.no_grad():
-        generated_imgs = model.transfer_style(content_imgs, style_imgs, num_inference_steps=20)
+        generated_imgs = model.transfer_style(content_imgs, style_imgs, num_inference_steps=100)
         generated_imgs = torch.clamp(generated_imgs, 0, 1)
     
     # Create visualization
@@ -300,7 +300,7 @@ def main(config_path='config_stydiff.yaml'):
         train_split=config['training']['train_split']
     )
     # Visualize the first batch of the training data
-    if 1:
+    if 0:
         print("Visualizing first batch of the training data...")
         first_batch = next(iter(train_loader))
         n_samples = 8
@@ -330,7 +330,7 @@ def main(config_path='config_stydiff.yaml'):
     # Training loop
     if config['training'].get('eval_only', False):
         print("Loading best model for evaluation...")
-        checkpoint = torch.load(config['checkpoint']['load_path'], weights_only=False)
+        checkpoint = torch.load(config['checkpoint']['load_path'], weights_only=False, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
     else:
         print("Starting training...")
