@@ -123,7 +123,7 @@ class StyDiff(nn.Module):
         """
         # Encode images and get AdaIN features
         # map content channels (B, C, H, W) to style channels (B, C, H, W)
-        content_img = self.map_content_style(content_img)
+        #content_img = self.map_content_style(content_img)
         content_latent, style_latent, adapted_features, content_features, style_features = \
             self.encode_images(content_img, style_img)
         # Use the last (deepest) adapted feature as style conditioning
