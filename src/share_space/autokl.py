@@ -66,13 +66,13 @@ class AutoKLEncoder(nn.Module):
             DownBlock(base_channels, base_channels),
             DownBlock(base_channels, base_channels * 2),
             DownBlock(base_channels * 2, base_channels * 2),
-            #DownBlock(base_channels * 4, base_channels * 4),
+            DownBlock(base_channels * 4, base_channels * 4),
         ])
         
         # Middle residual blocks
         self.mid_blocks = nn.ModuleList([
-            #ResidualBlock(base_channels * 4),
-            #ResidualBlock(base_channels * 4),
+            ResidualBlock(base_channels * 4),
+            ResidualBlock(base_channels * 4),
             ResidualBlock(base_channels * 2),
             ResidualBlock(base_channels * 2),
         ])
@@ -115,15 +115,15 @@ class AutoKLDecoder(nn.Module):
         
         # Middle residual blocks
         self.mid_blocks = nn.ModuleList([
-            #ResidualBlock(base_channels * 4),
-            #ResidualBlock(base_channels * 4),
+            ResidualBlock(base_channels * 4),
+            ResidualBlock(base_channels * 4),
             ResidualBlock(base_channels * 2),
             ResidualBlock(base_channels * 2),
         ])
         
         # Upsampling path
         self.up_blocks = nn.ModuleList([
-            #UpBlock(base_channels * 4, base_channels * 4),
+            UpBlock(base_channels * 4, base_channels * 4),
             UpBlock(base_channels * 2, base_channels * 2),
             UpBlock(base_channels * 2, base_channels),
             UpBlock(base_channels, base_channels),
