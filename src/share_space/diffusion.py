@@ -35,22 +35,20 @@ def get_timestep_embedding(timesteps, embedding_dim):
 
 
 class TimeEmbedding(nn.Module):
-    """Sinusoidal timestep embedding"""
+    """More efficient timestep embedding"""
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
-        self.linear1 = nn.Linear(dim, dim * 4)
-        self.linear2 = nn.Linear(dim * 4, dim * 4)
+        self.linear1 = nn.Linear(dim, dim * 2)
+        self.linear2 = nn.Linear(dim * 2, dim * 2)
     
     def forward(self, timesteps):
-        # Sinusoidal embedding
         half_dim = self.dim // 2
         emb = torch.log(torch.tensor(10000.0)) / (half_dim - 1)
         emb = torch.exp(torch.arange(half_dim, device=timesteps.device) * -emb)
         emb = timesteps[:, None] * emb[None, :]
         emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
         
-        # MLP
         emb = self.linear1(emb)
         emb = F.silu(emb)
         emb = self.linear2(emb)
@@ -237,8 +235,7 @@ class UNetModel(nn.Module):
             time_emb_dim = model_channels * 4
         
         self.time_embedding = TimeEmbedding(time_emb_dim)
-        # TimeEmbedding outputs time_emb_dim * 4, so we need to use that for ResBlocks
-        self.time_emb_dim_output = time_emb_dim * 4
+        self.time_emb_dim_output = time_emb_dim * 2  # ← Changed from * 4
         self.num_res_blocks = num_res_blocks
         
         # Input convolution
@@ -388,7 +385,10 @@ class DiffusionModel(nn.Module):
             style_condition: Style conditioning from AdaIN
         
         Returns:
-            Predicted noise and actual noise
+            noise_pred: Predicted noise from UNet
+            noise: Actual noise that was added
+            xt: Noisy latent (x_t)
+            t: Timesteps used
         """
         batch_size = x0.shape[0]
         
@@ -400,7 +400,7 @@ class DiffusionModel(nn.Module):
         # Predict noise
         noise_pred = self.unet(xt, t, style_condition)
         
-        return noise_pred, noise
+        return noise_pred, noise, xt, t
     
     @torch.no_grad()
     def sample(self, shape, style_condition=None, num_inference_steps=50):

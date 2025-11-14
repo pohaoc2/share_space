@@ -81,9 +81,11 @@ def test_diffusion():
     x0 = torch.randn(2, 4, 64, 64)  # Latent size
     print(f"Input latent shape: {x0.shape}")
     
-    noise_pred, noise_target = model(x0)
+    noise_pred, noise_target, xt, t = model(x0)
     print(f"Predicted noise shape: {noise_pred.shape}")
     print(f"Target noise shape: {noise_target.shape}")
+    print(f"Noisy latent (xt) shape: {xt.shape}")
+    print(f"Timesteps shape: {t.shape}")
     
     # Test sampling
     print("Testing sampling...")

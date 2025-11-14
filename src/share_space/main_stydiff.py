@@ -13,6 +13,7 @@ import torch
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from torchvision.utils import make_grid
 from PIL import Image
 import numpy as np
 from share_space.losses import StyDiffLoss
@@ -175,64 +176,72 @@ def evaluate(model, dataloader, metrics_evaluator, device):
     
     return avg_metrics
 
-
-def visualize_results(model, dataloader, device, save_path='stydiff_results.png', num_samples=3):
+def unnormalize_imagenet(imgs, device='cpu'):
     """
-    Visualize style transfer results
+    Reverse ImageNet normalization: T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     
     Args:
-        model: StyDiff model
-        dataloader: Dataloader
-        device: Device
-        save_path: Path to save visualization
-        num_samples: Number of samples to visualize
-    """
-    model.eval()
+        imgs: Tensor of shape (B, 3, H, W) in normalized range
+        device: Device to put tensors on
     
+    Returns:
+        Tensor in [0, 1] range
+    """
+    mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
+    
+    imgs = imgs * std + mean
+    imgs = torch.clamp(imgs, 0, 1)
+    
+    return imgs
+
+def visualize_results(model, dataloader, num_samples=4, device='cuda', save_path='results.png'):
+    """
+    Visualize style transfer results in a grid.
+    """
     batch = next(iter(dataloader))
-    #content_imgs = batch['simulation'][:num_samples].to(device)
-    #style_imgs = batch['experimental'][:num_samples].to(device)
     content_imgs = batch[0][:num_samples].to(device)
     style_imgs = batch[1][:num_samples].to(device)
     
     with torch.no_grad():
         generated_imgs = model.transfer_style(content_imgs, style_imgs, num_inference_steps=100)
-        generated_imgs = torch.clamp(generated_imgs, 0, 1)
+        mapped_content = torch.cat([
+            model.map_content_style(content_imgs[i:i+1]) for i in range(num_samples)
+        ], dim=0)
     
-    # Create visualization
-    fig, axes = plt.subplots(num_samples, 4, figsize=(12, 3 * num_samples))
+    # Unnormalize
+    content_vis = unnormalize_imagenet(content_imgs, device)
+    style_vis = unnormalize_imagenet(style_imgs, device)
+    generated_vis = unnormalize_imagenet(generated_imgs, device)
+    mapped_vis = unnormalize_imagenet(mapped_content, device)
     
+    # Create grid: each row is [content, mapped, style, generated]
+    all_imgs = []
     for i in range(num_samples):
-        # Content
-        print(f"mean of content_imgs[i]: {content_imgs[i].mean()}")
-        print(f"std of content_imgs[i]: {content_imgs[i].std()}")
-        print(f"content_imgs shape: {content_imgs[i].shape}")
-        # Reverse transform: T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        content_imgs[i] = content_imgs[i].to('cpu') * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1) + torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
-        content_imgs[i] = torch.clamp(content_imgs[i], 0, 1)
-        style_imgs[i] = style_imgs[i].to('cpu') * torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1) + torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
-        style_imgs[i] = torch.clamp(style_imgs[i], 0, 1)
-        axes[i, 0].imshow(content_imgs[i].cpu().permute(1, 2, 0).numpy())
-        axes[i, 0].set_title('Content' if i == 0 else '')
-        axes[i, 0].axis('off')
-        # Mapped content
-        axes[i, 1].imshow(model.map_content_style(content_imgs[i]).cpu().permute(1, 2, 0).detach().numpy())
-        axes[i, 1].set_title('Content (mapped)' if i == 0 else '')
-        axes[i, 1].axis('off')
-        # Style
-        axes[i, 2].imshow(style_imgs[i].cpu().permute(1, 2, 0).numpy())
-        axes[i, 2].set_title('Style' if i == 0 else '')
-        axes[i, 2].axis('off')
-        
-        # Generated
-        axes[i, 3].imshow(generated_imgs[i].cpu().permute(1, 2, 0).numpy())
-        axes[i, 3].set_title('Generated' if i == 0 else '')
-        axes[i, 3].axis('off')
+        all_imgs.extend([content_vis[i], mapped_vis[i], style_vis[i], generated_vis[i]])
+    
+    grid = make_grid(all_imgs, nrow=4, padding=2, normalize=False)
+    
+    # Plot
+    plt.figure(figsize=(12, 3 * num_samples))
+    plt.imshow(grid.cpu().permute(1, 2, 0).numpy())
+    plt.axis('off')
+    
+    # Add column labels
+    titles = ['Content', 'Content (mapped)', 'Style', 'Generated']
+    for idx, title in enumerate(titles):
+        plt.text(
+            (idx + 0.5) / 4, 0.02, title,
+            transform=plt.gca().transAxes,
+            fontsize=14, ha='center', weight='bold',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8)
+        )
     
     plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.show()
-    print(f"Visualization saved to {save_path}")
+    
+    return grid
 
 
 def main(config_path='config_stydiff.yaml'):
@@ -264,7 +273,6 @@ def main(config_path='config_stydiff.yaml'):
     print(f"Trainable parameters: {trainable_params / 1e6:.2f}M")
     print(f"Non-trainable parameters: {non_trainable_params / 1e6:.2f}M")
     print(f"Total parameters: {total_params / 1e6:.2f}M")
-
     # Create loss function
     criterion = StyDiffLoss(
         content_weight=config['loss'].get('content_weight', 1.0),
@@ -395,6 +403,8 @@ def main(config_path='config_stydiff.yaml'):
             plt.plot(epochs, loss_history['style'], label='Style Loss', marker='^')
             plt.plot(epochs, loss_history['element'], label='Element Loss', marker='d')
             plt.plot(epochs, loss_history['diffusion'], label='Diffusion Loss', marker='*')
+            plt.plot(epochs, loss_history['perceptual'], label='Perceptual Loss', marker='x')
+            plt.plot(epochs, loss_history['style_feature'], label='Style Feature Loss', marker='v')
             
             plt.xlabel('Epoch')
             plt.ylabel('Loss')
@@ -416,15 +426,47 @@ def main(config_path='config_stydiff.yaml'):
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
         with open(metrics_path, 'w') as f:
             json.dump(final_metrics, f, indent=2)
-    
+    # 3. Check actual loss values (not weighted)
+    with torch.no_grad():
+        batch = next(iter(val_loader))
+        content = batch[0][:4].to(device)
+        style = batch[1][:4].to(device)
+        outputs = model(content, style, return_intermediates=True)
+        # Get output image and encode it for loss calculation
+        output_img = outputs['output']
+        output_latent, _ = model.autokl.encode(output_img)
+        
+        # Extract VGG features for output
+        output_features = model.adain_fusion.vgg_extractor(
+            (output_img - torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)) / 
+            torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+        )
+        # Get raw loss values
+        losses = criterion(
+            content_latent=outputs['content_latent'],
+            style_latent=outputs['style_latent'],
+            output_latent=output_latent,
+            fused_latent=outputs['fused_latent'],
+            noise_pred=outputs['noise_pred'],
+            noise_target=outputs['noise_target'],
+            content_features=outputs['content_features'],
+            style_features=outputs['style_features'],
+            output_features=output_features
+        )
+        print(f"Raw content loss: {losses['content']}")
+        print(f"Raw style loss: {losses['style']}")
+        print(f"Raw element loss: {losses['element']}")
+        print(f"Raw diffusion loss: {losses['diffusion']}")
+        print(f"Raw perceptual loss: {losses['perceptual']}")
+        print(f"Raw style feature loss: {losses['style_feature']}")
+        print(f"Raw total loss: {losses['total']}")
     # Visualize results
 
     visualize_results(
-        model, val_loader, device,
+        model, val_loader, device=device,
         save_path='stydiff_results.png',
         num_samples=3
     )
-
 
 if __name__ == '__main__':
     import sys

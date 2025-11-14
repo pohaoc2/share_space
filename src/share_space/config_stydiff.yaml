@@ -3,21 +3,21 @@
 
 # Model configuration
 model:
-  img_size: 112
+  img_size: 128
   in_channels_content: 3
   in_channels_style: 3
   out_channels: 3
   latent_channels: 4  # AutoKL latent channels
   autokl_base_channels: 64
   diffusion_model_channels: 64
-  num_embeddings: 256  # For vector quantization
+  num_embeddings: 8192  # For vector quantization
   diffusion_timesteps: 100
   unet_config: {
     in_channels: 4, # latent_channels
     out_channels: 4, # latent_channels
     model_channels: 64, # diffusion_model_channels
     num_res_blocks: 1,
-    attention_resolutions: [4, 8],
+    attention_resolutions: [2],
     channel_mult: [1, 2, 4],
     num_heads: 4
   }
@@ -35,7 +35,7 @@ training:
   learning_rate: 0.0001
   weight_decay: 0.0001
   train_split: 0.8
-  eval_only: true  # Set to true to only evaluate
+  eval_only: false  # Set to true to only evaluate
 
 # Loss function weights
 # Based on paper's ablation study (Table 4)
@@ -45,7 +45,7 @@ loss:
   style_weight: 1.0         # β - L_StyleLatent
   element_weight: 1.0       # γ - L_Element
   diffusion_weight: 1.0     # δ - L_diff
-  perceptual_weight: 0.1    # Additional perceptual loss
+  perceptual_weight: 0.5    # Additional perceptual loss
   style_feature_weight: 1.0 # Additional style feature loss (Gram matrix)
 
 # Checkpoint configuration

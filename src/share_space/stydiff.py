@@ -147,11 +147,19 @@ class StyDiff(nn.Module):
         fused_latent = content_latent + style_condition_proj
         
         # Apply diffusion model (forward process for training)
-        noise_pred, noise_target = self.diffusion(fused_latent, style_condition=style_condition_proj)
+        noise_pred, noise_target, xt, t = self.diffusion(fused_latent, style_condition=style_condition_proj)
         
-        # For training, we denoise the latent
-        # Reconstruct from denoised latent
-        denoised_latent = fused_latent
+        # For training, we compute a denoised latent approximation using the predicted noise
+        # This gives us an estimate of x_0 from x_t using the predicted noise
+        # Formula: x_0_pred = (x_t - sqrt(1 - alpha_t) * noise_pred) / sqrt(alpha_t)
+        alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
+        sqrt_alpha_t = torch.sqrt(alpha_t)
+        sqrt_one_minus_alpha_t = torch.sqrt(1.0 - alpha_t)
+        
+        # Predict x_0 from x_t using predicted noise
+        denoised_latent = (xt - sqrt_one_minus_alpha_t * noise_pred) / sqrt_alpha_t
+        
+        # Decode the denoised latent to get output image
         output = self.autokl.decode(denoised_latent)
         
         results = {
@@ -186,7 +194,7 @@ class StyDiff(nn.Module):
             Stylized image
         """
         # Encode images
-        content_img = self.map_content_style(content_img)
+        #content_img = self.map_content_style(content_img)
         content_latent, style_latent, adapted_features, _, _ = \
             self.encode_images(content_img, style_img)
         
