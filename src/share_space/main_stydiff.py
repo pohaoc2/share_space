@@ -16,7 +16,7 @@ from torchvision import transforms
 from torchvision.utils import make_grid
 from PIL import Image
 import numpy as np
-from share_space.losses import StyDiffLoss
+from share_space.losses import StyDiffLoss, AutoKLLoss
 from share_space.metrics import StyDiffMetrics
 from share_space.stydiff import StyDiff
 from share_space.dataset_real import get_real_dataloaders
@@ -61,14 +61,23 @@ def train_epoch_stage1(model, dataloader, optimizer, criterion, device, epoch):
         style_recon, _, _ = model.autokl(style_img)
         # Calculate losses
         losses = criterion(
-            original=content_img,
-            recon=content_recon
+            content_original=content_img,
+            style_original=style_img,
+            content_recon=content_recon,
+            style_recon=style_recon
         )
         # Backward pass
         optimizer.zero_grad()
-        losses['total'].backward()
+        losses['auto_kl'].backward()
+        optimizer.step()
+        # Accumulate losses
+        for key in total_losses.keys():
+            total_losses[key] += losses[key].item()
+        num_batches += 1
+        if batch_idx % 10 == 0:
+            print(f"Epoch {epoch}, Batch {batch_idx}/{len(dataloader)}, "
+                  f"AutoKL Loss: {losses['auto_kl'].item():.4f}")
     return total_losses
-
 
 def train_epoch(model, dataloader, optimizer, criterion, device, epoch):
     """
@@ -313,6 +322,8 @@ def main(config_path='config_stydiff.yaml'):
         style_feature_weight=config['loss'].get('style_feature_weight', 1.0)
     )
     
+    # Create AutoKLLoss function
+    auto_kl_loss = AutoKLLoss()
     # Create optimizer
     optimizer = optim.AdamW(
         model.parameters(),
@@ -387,12 +398,37 @@ def main(config_path='config_stydiff.yaml'):
         for epoch in range(config['training']['epochs']):
             print(f"\nEpoch {epoch + 1}/{config['training']['epochs']}")
             
-            # Train
-            train_losses = train_epoch(
-                model, train_loader, optimizer, criterion, device, epoch + 1
+            # Train stage 1
+            train_losses = train_epoch_stage1(
+                model, train_loader, optimizer, auto_kl_loss, device, epoch + 1
             )
+            print(f"Train stage 1 losses: {train_losses}")
+            print(f"Train stage 1 completed")
+            batch = next(iter(train_loader))
+            content = batch[0][0].permute(1, 2, 0).cpu().numpy()[0]
+            style = batch[1][0].permute(1, 2, 0).cpu().numpy()[0]
+            recon_content, _, _ = model.autokl(content)
+            recon_style, _, _ = model.autokl(style)
+            # Viz original and reconstructed images
+            fig, ax = plt.subplots(4, 4, figsize=(12, 6))
+            for i in range(4):
+                ax[0, i].imshow(content[i].permute(1, 2, 0).cpu().numpy()[0])
+                ax[1, i].imshow(style[i].permute(1, 2, 0).cpu().numpy()[0])
+                ax[2, i].imshow(recon_content[i].permute(1, 2, 0).cpu().numpy()[0])
+                ax[3, i].imshow(recon_style[i].permute(1, 2, 0).cpu().numpy()[0])
+                ax[0, i].axis('off')
+                ax[1, i].axis('off')
+                ax[2, i].axis('off')
+                ax[3, i].axis('off')
+            plt.tight_layout()
+            plt.show()
+            if 0:
+                # Train stage 2
+                train_losses = train_epoch(
+                    model, train_loader, optimizer, criterion, device, epoch + 1
+                )
             
-            print(f"Train losses: {train_losses}")
+                print(f"Train losses: {train_losses}")
             
             # Store losses
             for key in loss_history.keys():
@@ -426,27 +462,28 @@ def main(config_path='config_stydiff.yaml'):
         print("Training complete!")
         
         # Plot loss history
-        if len(loss_history['total']) > 0:
-            plt.figure(figsize=(12, 5))
-            epochs = range(1, len(loss_history['total']) + 1)
-            
-            plt.plot(epochs, loss_history['total'], label='Total Loss', marker='o')
-            plt.plot(epochs, loss_history['content'], label='Content Loss', marker='s')
-            plt.plot(epochs, loss_history['style'], label='Style Loss', marker='^')
-            plt.plot(epochs, loss_history['element'], label='Element Loss', marker='d')
-            plt.plot(epochs, loss_history['diffusion'], label='Diffusion Loss', marker='*')
-            plt.plot(epochs, loss_history['perceptual'], label='Perceptual Loss', marker='x')
-            plt.plot(epochs, loss_history['style_feature'], label='Style Feature Loss', marker='v')
-            
-            plt.xlabel('Epoch')
-            plt.ylabel('Loss')
-            plt.title('Training Losses Over Epochs')
-            plt.legend()
-            plt.grid(True, alpha=0.3)
-            plt.tight_layout()
-            plt.savefig('stydiff_training_losses.png', dpi=300, bbox_inches='tight')
-            plt.show()
-    
+        if 0:
+            if len(loss_history['total']) > 0:
+                plt.figure(figsize=(12, 5))
+                epochs = range(1, len(loss_history['total']) + 1)
+                
+                plt.plot(epochs, loss_history['total'], label='Total Loss', marker='o')
+                plt.plot(epochs, loss_history['content'], label='Content Loss', marker='s')
+                plt.plot(epochs, loss_history['style'], label='Style Loss', marker='^')
+                plt.plot(epochs, loss_history['element'], label='Element Loss', marker='d')
+                plt.plot(epochs, loss_history['diffusion'], label='Diffusion Loss', marker='*')
+                plt.plot(epochs, loss_history['perceptual'], label='Perceptual Loss', marker='x')
+                plt.plot(epochs, loss_history['style_feature'], label='Style Feature Loss', marker='v')
+                
+                plt.xlabel('Epoch')
+                plt.ylabel('Loss')
+                plt.title('Training Losses Over Epochs')
+                plt.legend()
+                plt.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plt.savefig('stydiff_training_losses.png', dpi=300, bbox_inches='tight')
+                plt.show()
+    asd()
     # Final evaluation
     if 0:
         print("\nFinal evaluation...")

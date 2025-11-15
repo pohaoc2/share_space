@@ -186,7 +186,7 @@ class AutoKLLoss(nn.Module):
         super().__init__()
         self.criterion = nn.MSELoss()
     
-    def forward(self, original, recon):
+    def forward(self, content_original, style_original, content_recon, style_recon):
         """
         Args:
             original: Original image
@@ -195,7 +195,10 @@ class AutoKLLoss(nn.Module):
         Returns:
             AutoKL loss
         """
-        return self.criterion(original, recon)
+        losses = {}
+        losses['auto_kl'] = self.criterion(content_original, content_recon) + self.criterion(style_original, style_recon)
+        losses['total'] = losses['auto_kl']
+        return losses
 
 class StyDiffLoss(nn.Module):
     """
