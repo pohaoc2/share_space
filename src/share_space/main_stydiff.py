@@ -40,6 +40,36 @@ def load_config(config_path='config.yaml'):
     return config
 
 
+def train_epoch_stage1(model, dataloader, optimizer, criterion, device, epoch):
+    """
+    Train for one epoch in stage 1
+    """
+    model.train()
+    total_losses = {
+        'total': 0.0,
+    }
+    
+    num_batches = 0
+    
+    for batch_idx, batch in enumerate(dataloader):
+        # content_img = batch['simulation'].to(device)
+        # style_img = batch['experimental'].to(device)
+        content_img = batch[0].to(device)
+        style_img = batch[1].to(device)
+        # Forward pass
+        content_recon, _, _ = model.autokl(content_img)
+        style_recon, _, _ = model.autokl(style_img)
+        # Calculate losses
+        losses = criterion(
+            original=content_img,
+            recon=content_recon
+        )
+        # Backward pass
+        optimizer.zero_grad()
+        losses['total'].backward()
+    return total_losses
+
+
 def train_epoch(model, dataloader, optimizer, criterion, device, epoch):
     """
     Train for one epoch

@@ -59,52 +59,6 @@ class StyleLoss(nn.Module):
         """
         return self.criterion(style_latent, output_latent)
 
-
-class GramMatrix(nn.Module):
-    """Compute Gram matrix for style representation"""
-    def forward(self, features):
-        """
-        Args:
-            features: Feature tensor (B, C, H, W)
-        
-        Returns:
-            Gram matrix (B, C, C)
-        """
-        b, c, h, w = features.size()
-        features = features.view(b, c, h * w)
-        gram = torch.bmm(features, features.transpose(1, 2))
-        return gram / (c * h * w)
-
-
-class StyleFeatureLoss(nn.Module):
-    """
-    Style feature loss using Gram matrices
-    Measures style similarity in VGG feature space
-    """
-    def __init__(self):
-        super().__init__()
-        self.gram = GramMatrix()
-        self.criterion = nn.MSELoss()
-    
-    def forward(self, style_features_list, output_features_list):
-        """
-        Args:
-            style_features_list: List of style features from VGG
-            output_features_list: List of output features from VGG
-        
-        Returns:
-            Style feature loss across multiple layers
-        """
-        loss = 0.0
-        
-        for style_feat, output_feat in zip(style_features_list, output_features_list):
-            style_gram = self.gram(style_feat)
-            output_gram = self.gram(output_feat)
-            loss += self.criterion(style_gram, output_gram)
-        
-        return loss / len(style_features_list)
-
-
 class ElementLoss(nn.Module):
     """
     Element Loss (Equation 9 in paper)
@@ -153,6 +107,51 @@ class DiffusionLoss(nn.Module):
         return self.criterion(noise_pred, noise_target)
 
 
+class GramMatrix(nn.Module):
+    """Compute Gram matrix for style representation"""
+    def forward(self, features):
+        """
+        Args:
+            features: Feature tensor (B, C, H, W)
+        
+        Returns:
+            Gram matrix (B, C, C)
+        """
+        b, c, h, w = features.size()
+        features = features.view(b, c, h * w)
+        gram = torch.bmm(features, features.transpose(1, 2))
+        return gram / (c * h * w)
+
+
+class StyleFeatureLoss(nn.Module):
+    """
+    Style feature loss using Gram matrices
+    Measures style similarity in VGG feature space
+    """
+    def __init__(self):
+        super().__init__()
+        self.gram = GramMatrix()
+        self.criterion = nn.MSELoss()
+    
+    def forward(self, style_features_list, output_features_list):
+        """
+        Args:
+            style_features_list: List of style features from VGG
+            output_features_list: List of output features from VGG
+        
+        Returns:
+            Style feature loss across multiple layers
+        """
+        loss = 0.0
+        
+        for style_feat, output_feat in zip(style_features_list, output_features_list):
+            style_gram = self.gram(style_feat)
+            output_gram = self.gram(output_feat)
+            loss += self.criterion(style_gram, output_gram)
+        
+        return loss / len(style_features_list)
+
+
 class PerceptualLoss(nn.Module):
     """
     Perceptual loss using VGG features
@@ -178,6 +177,25 @@ class PerceptualLoss(nn.Module):
         
         return loss / len(content_features_list)
 
+
+class AutoKLLoss(nn.Module):
+    """
+    Loss for AutoKL
+    """
+    def __init__(self):
+        super().__init__()
+        self.criterion = nn.MSELoss()
+    
+    def forward(self, original, recon):
+        """
+        Args:
+            original: Original image
+            recon: Reconstructed image
+        
+        Returns:
+            AutoKL loss
+        """
+        return self.criterion(original, recon)
 
 class StyDiffLoss(nn.Module):
     """
