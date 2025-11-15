@@ -349,7 +349,9 @@ def main(config_path='config_stydiff.yaml'):
             'content': [],
             'style': [],
             'element': [],
-            'diffusion': []
+            'diffusion': [],
+            'perceptual': [],
+            'style_feature': []
         }
         
         for epoch in range(config['training']['epochs']):

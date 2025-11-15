@@ -35,20 +35,22 @@ def get_timestep_embedding(timesteps, embedding_dim):
 
 
 class TimeEmbedding(nn.Module):
-    """More efficient timestep embedding"""
+    """Sinusoidal timestep embedding"""
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
-        self.linear1 = nn.Linear(dim, dim * 2)
-        self.linear2 = nn.Linear(dim * 2, dim * 2)
+        self.linear1 = nn.Linear(dim, dim * 4)
+        self.linear2 = nn.Linear(dim * 4, dim * 4)
     
     def forward(self, timesteps):
+        # Sinusoidal embedding
         half_dim = self.dim // 2
         emb = torch.log(torch.tensor(10000.0)) / (half_dim - 1)
         emb = torch.exp(torch.arange(half_dim, device=timesteps.device) * -emb)
         emb = timesteps[:, None] * emb[None, :]
         emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
         
+        # MLP
         emb = self.linear1(emb)
         emb = F.silu(emb)
         emb = self.linear2(emb)
@@ -235,7 +237,8 @@ class UNetModel(nn.Module):
             time_emb_dim = model_channels * 4
         
         self.time_embedding = TimeEmbedding(time_emb_dim)
-        self.time_emb_dim_output = time_emb_dim * 2  # ← Changed from * 4
+        # TimeEmbedding outputs time_emb_dim * 4, so we need to use that for ResBlocks
+        self.time_emb_dim_output = time_emb_dim * 4
         self.num_res_blocks = num_res_blocks
         
         # Input convolution
@@ -385,10 +388,7 @@ class DiffusionModel(nn.Module):
             style_condition: Style conditioning from AdaIN
         
         Returns:
-            noise_pred: Predicted noise from UNet
-            noise: Actual noise that was added
-            xt: Noisy latent (x_t)
-            t: Timesteps used
+            Predicted noise and actual noise
         """
         batch_size = x0.shape[0]
         
@@ -400,50 +400,96 @@ class DiffusionModel(nn.Module):
         # Predict noise
         noise_pred = self.unet(xt, t, style_condition)
         
-        return noise_pred, noise, xt, t
+        return noise_pred, noise
     
     @torch.no_grad()
-    def sample(self, shape, style_condition=None, num_inference_steps=50):
+    def sample(self, shape, style_condition=None, num_inference_steps=50, init_latent=None, t_start=None):
         """
         Sample from the diffusion model (reverse process)
         
         Args:
             shape: Shape of the latent to generate
-            style_condition: Style conditioning
+            style_condition: Style conditioning (B, C, H, W)
             num_inference_steps: Number of denoising steps
+            init_latent: Optional initial latent to start from (e.g., fused_latent)
+            t_start: Timestep to start from (if None, starts from pure noise at t=T-1)
+                    Use smaller values to start from partially noised init_latent
+                    Example: t_start=num_inference_steps//4 means start from 75% denoised
         
         Returns:
             Generated latent
         """
         device = next(self.parameters()).device
         
-        # Start from pure noise
-        x = torch.randn(shape, device=device)
+        # Determine starting point
+        if init_latent is not None:
+            # Start from provided latent
+            x = init_latent.clone()
+            
+            # If t_start is provided, add noise to init_latent
+            if t_start is not None:
+                # Map t_start (inference step) to actual timestep
+                start_timestep = self.timesteps - 1 - (t_start * self.timesteps // num_inference_steps)
+                start_timestep = max(0, min(start_timestep, self.timesteps - 1))
+                
+                # Add noise to init_latent according to forward process
+                noise = torch.randn_like(x)
+                alpha_start = self.alphas_cumprod[start_timestep]
+                x = torch.sqrt(alpha_start) * x + torch.sqrt(1 - alpha_start) * noise
+                
+                # Start denoising from this timestep
+                timesteps = torch.linspace(start_timestep, 0, num_inference_steps - t_start, device=device).long()
+            else:
+                # Use init_latent as-is, denoise from T-1
+                timesteps = torch.linspace(self.timesteps - 1, 0, num_inference_steps, device=device).long()
+        else:
+            # Start from pure noise (original behavior)
+            x = torch.randn(shape, device=device)
+            timesteps = torch.linspace(self.timesteps - 1, 0, num_inference_steps, device=device).long()
         
-        # Reverse diffusion
-        timesteps = torch.linspace(self.timesteps - 1, 0, num_inference_steps, device=device).long()
-        
-        for t in timesteps:
+        # Reverse diffusion process
+        for i, t in enumerate(timesteps):
             t_batch = t.repeat(shape[0])
             
             # Predict noise
             noise_pred = self.unet(x, t_batch, style_condition)
             
-            # Denoise
+            # Get alpha values
             alpha_t = self.alphas_cumprod[t]
-            alpha_t_prev = self.alphas_cumprod[max(0, t - self.timesteps // num_inference_steps)]
             
+            # Determine previous alpha
+            if i < len(timesteps) - 1:
+                t_prev = timesteps[i + 1]
+                alpha_t_prev = self.alphas_cumprod[t_prev]
+            else:
+                alpha_t_prev = torch.tensor(1.0, device=device)
+            
+            # Compute beta_t
             beta_t = 1 - alpha_t / alpha_t_prev
             
-            # Mean
-            pred_x0 = (x - torch.sqrt(1 - alpha_t) * noise_pred) / torch.sqrt(alpha_t)
-            mean = torch.sqrt(alpha_t_prev) * beta_t / (1 - alpha_t) * pred_x0 + \
-                   torch.sqrt(self.alphas[t]) * (1 - alpha_t_prev) / (1 - alpha_t) * x
+            # Predict x0 (the clean latent)
+            sqrt_alpha_t = torch.sqrt(alpha_t)
+            sqrt_one_minus_alpha_t = torch.sqrt(1 - alpha_t)
+            pred_x0 = (x - sqrt_one_minus_alpha_t * noise_pred) / sqrt_alpha_t
             
-            # Add noise
+            # Clip pred_x0 for stability (optional but recommended)
+            pred_x0 = torch.clamp(pred_x0, -1, 1)
+            
+            # Compute mean of posterior q(x_{t-1} | x_t, x_0)
+            sqrt_alpha_t_prev = torch.sqrt(alpha_t_prev)
+            sqrt_one_minus_alpha_t_prev = torch.sqrt(1 - alpha_t_prev)
+            
+            # Direction pointing to x_t
+            dir_xt = (1 - alpha_t_prev - beta_t) / sqrt_one_minus_alpha_t * x
+            
+            # Compute mean
+            mean = sqrt_alpha_t_prev * beta_t / (1 - alpha_t) * pred_x0 + dir_xt
+            
+            # Add noise (except for the last step)
             if t > 0:
                 noise = torch.randn_like(x)
-                x = mean + torch.sqrt(beta_t) * noise
+                sigma_t = torch.sqrt(beta_t)
+                x = mean + sigma_t * noise
             else:
                 x = mean
         

@@ -141,26 +141,34 @@ class StyDiff(nn.Module):
         
         # Project style features to latent space
         style_condition_proj = self.style_projection(style_condition)
+
+        # 3. FUSE style into content latent (this is your A(Xs, Xi) from the paper)
+        fused_latent = content_latent + style_condition_proj  # Could also use 0.5 * style
         
-        # Combine content latent with style conditioning
-        # A(Xs, Xi) from the paper - fusion of style and content in latent space
-        fused_latent = content_latent + style_condition_proj
+        # 4. Diffusion training on FUSED latent
+        t = torch.randint(
+            0, 
+            self.diffusion.timesteps, 
+            (content_img.shape[0],),
+            device=content_img.device
+        )
         
-        # Apply diffusion model (forward process for training)
-        noise_pred, noise_target, xt, t = self.diffusion(fused_latent, style_condition=style_condition_proj)
+        # Add noise to FUSED latent (not content alone!)
+        noise = torch.randn_like(fused_latent)
         
-        # For training, we compute a denoised latent approximation using the predicted noise
-        # This gives us an estimate of x_0 from x_t using the predicted noise
-        # Formula: x_0_pred = (x_t - sqrt(1 - alpha_t) * noise_pred) / sqrt(alpha_t)
         alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
         sqrt_alpha_t = torch.sqrt(alpha_t)
         sqrt_one_minus_alpha_t = torch.sqrt(1.0 - alpha_t)
         
-        # Predict x_0 from x_t using predicted noise
-        denoised_latent = (xt - sqrt_one_minus_alpha_t * noise_pred) / sqrt_alpha_t
+        noisy_latent = sqrt_alpha_t * fused_latent + sqrt_one_minus_alpha_t * noise
         
-        # Decode the denoised latent to get output image
-        output = self.autokl.decode(denoised_latent)
+        # 5. Predict noise WITHOUT style conditioning
+        # The style is already in the noisy_latent!
+        noise_pred = self.diffusion.unet(
+            noisy_latent,
+            t
+        )
+        output = self.autokl.decode(fused_latent)
         
         results = {
             'output': output,
@@ -168,7 +176,7 @@ class StyDiff(nn.Module):
             'style_latent': style_latent,
             'fused_latent': fused_latent,
             'noise_pred': noise_pred,
-            'noise_target': noise_target,
+            'noise_target': noise,
             'adapted_features': adapted_features,
             'content_features': content_features,
             'style_features': style_features,
@@ -181,7 +189,7 @@ class StyDiff(nn.Module):
         return results
     
     @torch.no_grad()
-    def transfer_style(self, content_img, style_img, num_inference_steps=50):
+    def transfer_style(self, content_img, style_img, num_inference_steps=50, denoise_strength=0.25):
         """
         Transfer style from style_img to content_img
         
@@ -189,12 +197,13 @@ class StyDiff(nn.Module):
             content_img: Content image (B, 3, H, W)
             style_img: Style image (B, 3, H, W)
             num_inference_steps: Number of denoising steps
+            denoise_strength: How much to denoise (0.0 = no denoising, 1.0 = full denoising from noise)
+                            0.25 means start from 75% denoised state
         
         Returns:
             Stylized image
         """
         # Encode images
-        #content_img = self.map_content_style(content_img)
         content_latent, style_latent, adapted_features, _, _ = \
             self.encode_images(content_img, style_img)
         
@@ -213,19 +222,22 @@ class StyDiff(nn.Module):
         # Project style features
         style_condition_proj = self.style_projection(style_condition)
         
-        # Fuse content and style
+        # Fuse content and style (SAME AS TRAINING!)
         fused_latent = content_latent + style_condition_proj
         
-        # Sample from diffusion model (could optionally start from fused_latent instead of noise)
-        # For better quality, we can do iterative refinement
+        # Option 1: Direct decode (fastest, no denoising)
+        # output = self.autokl.decode(fused_latent)
+        
+        # Option 2: Refine with diffusion (better quality, slower)
+        t_start = int(denoise_strength * num_inference_steps)
+        
         generated_latent = self.diffusion.sample(
             shape=content_latent.shape,
             style_condition=style_condition_proj,
-            num_inference_steps=num_inference_steps
+            num_inference_steps=num_inference_steps,
+            init_latent=fused_latent,
+            t_start=t_start  # Controls how much denoising to apply
         )
-        
-        # Alternatively, use the fused latent directly for faster inference
-        generated_latent = fused_latent
         
         # Decode to image
         output = self.autokl.decode(generated_latent)

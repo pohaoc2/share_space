@@ -24,14 +24,14 @@ model:
 
 # Data configuration
 data:
-  exp_dir: ../../data/coco/val2017
+  exp_dir: ../../data/test2017
   sim_dir: ../../data/small_style
   num_workers: 4
 
 # Training configuration
 training:
   batch_size: 16
-  epochs: 1
+  epochs: 3
   learning_rate: 0.0001
   weight_decay: 0.0001
   train_split: 0.8
@@ -41,12 +41,12 @@ training:
 # Based on paper's ablation study (Table 4)
 # Default: α=1.0, β=1.0, γ=1.0, δ=1.0
 loss:
-  content_weight: 1.0       # α - L_ImageLatent
-  style_weight: 1.0         # β - L_StyleLatent
-  element_weight: 1.0       # γ - L_Element
+  content_weight: 100.0       # α - L_ImageLatent
+  style_weight: 100.0         # β - L_StyleLatent
+  element_weight: 100.0       # γ - L_Element
   diffusion_weight: 1.0     # δ - L_diff
-  perceptual_weight: 0.5    # Additional perceptual loss
-  style_feature_weight: 1.0 # Additional style feature loss (Gram matrix)
+  perceptual_weight: 0.0    # Additional perceptual loss
+  style_feature_weight: 0 # Additional style feature loss (Gram matrix)
 
 # Checkpoint configuration
 checkpoint:

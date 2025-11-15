@@ -83,7 +83,7 @@ class SimExpPairedDataset(Dataset):
                 image_files.extend(directory.rglob(f"*{ext}"))
                 image_files.extend(directory.rglob(f"*{ext.upper()}"))
         
-        return sorted(image_files)#[:1000]
+        return sorted(image_files)[:1000]
     
     def __len__(self) -> int:
         """Dataset length is determined by the content (COCO) dataset."""
