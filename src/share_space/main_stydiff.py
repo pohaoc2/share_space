@@ -59,6 +59,34 @@ def train_epoch_stage1(model, dataloader, optimizer, criterion, device, epoch):
         # Forward pass
         content_recon, _, _ = model.autokl(content_img)
         style_recon, _, _ = model.autokl(style_img)
+
+
+        # Visualize the original and reconstructed images
+        fig, ax = plt.subplots(4, 4, figsize=(8, 6))
+        content_img = unnormalize_imagenet(content_img)
+        style_img = unnormalize_imagenet(style_img)
+        content_recon = unnormalize_imagenet(content_recon)
+        style_recon = unnormalize_imagenet(style_recon)
+        for i in range(4):
+            ax[i, 0].imshow(content_img[i].permute(1, 2, 0).cpu().numpy())
+            ax[i, 1].imshow(style_img[i].permute(1, 2, 0).cpu().numpy())
+            ax[i, 2].imshow(content_recon[i].permute(1, 2, 0).cpu().detach().numpy())
+            ax[i, 3].imshow(style_recon[i].permute(1, 2, 0).cpu().detach().numpy())
+            ax[i, 0].axis('off')
+            ax[i, 1].axis('off')
+            ax[i, 2].axis('off')
+            ax[i, 3].axis('off')
+            if i == 0:
+                ax[i, 0].set_title('Content (Original)', loc='center')
+                ax[i, 1].set_title('Style (Original)', loc='center')
+                ax[i, 2].set_title('Content (Reconstructed)', loc='center')
+                ax[i, 3].set_title('Style (Reconstructed)', loc='center')
+        plt.tight_layout()
+        plt.subplots_adjust(hspace=0.1, wspace=0.1)
+        plt.savefig('original_and_reconstructed_images.png', dpi=300, bbox_inches='tight', transparent=True)
+        plt.show()
+        asd()
+        return
         # Calculate losses
         losses = criterion(
             content_original=content_img,
