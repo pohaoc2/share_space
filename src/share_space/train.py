@@ -77,8 +77,10 @@ class TeacherStudentTrainer:
         self.student.train()
         self.teacher.eval()
         
-        sim_images = batch['simulation'].to(self.device).float()  # Ensure float32
-        exp_images = batch['experimental'].to(self.device).float()  # Ensure float32
+        #sim_images = batch['simulation'].to(self.device).float()  # Ensure float32
+        #exp_images = batch['experimental'].to(self.device).float()  # Ensure float32
+        sim_images = batch[0].to(self.device).float()  # Ensure float32
+        exp_images = copy.deepcopy(sim_images) # batch[1].to(self.device).float()  # Ensure float32
         B, C, H, W = sim_images.shape
         
         # Handle both int and tuple patch_size

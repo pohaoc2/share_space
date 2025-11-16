@@ -7,8 +7,11 @@ import torch.optim as optim
 from share_space.models.sim2exp_model import Sim2ExpModel
 from share_space.train import TeacherStudentTrainer
 from share_space.loss import Sim2ExpLoss
-from share_space.dataset import get_dummy_dataloaders, get_real_dataloaders
+from share_space.dataset import get_dummy_dataloaders#, get_real_dataloaders
+from share_space.dataset_real import get_real_dataloaders
 from share_space.evaluation import MetricsEvaluator
+import copy
+
 
 state_names = {
     1: 'OTHER',
@@ -142,7 +145,6 @@ def main(config_path='config.yaml'):
             train_losses = trainer.train_epoch(
                 train_loader, optimizer, loss_fn, mask_ratio=config['training']['mask_ratio']
             )
-            
             print(f"Train losses: {train_losses}")
             
             # Store losses for plotting
@@ -175,7 +177,7 @@ def main(config_path='config.yaml'):
         print("Training complete!")
     
     # Final evaluation
-    if 1:
+    if 0:
         print("\nFinal evaluation...")
         final_metrics = evaluator.evaluate_model(model, val_loader)
         print(f"Final metrics: {final_metrics}")
@@ -206,23 +208,28 @@ def main(config_path='config.yaml'):
     n_viz = 3
     print(f"Visualizing {n_viz} samples of reconstructed images in the first batch of the validation data...")
     first_batch = next(iter(val_loader))
-    fig, ax = plt.subplots(n_viz, 10, figsize=(3 * 8, 3 * n_viz))
+    fig, ax = plt.subplots(n_viz, 2, figsize=(3 * 2, 3 * n_viz))
     for i in range(n_viz):
-        exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
-        sim_img = first_batch['simulation'][i]
+        #exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
+        #sim_img = first_batch['simulation'][i]
+        exp_img = first_batch[0][i].permute(1, 2, 0).cpu().detach().numpy()
+        sim_img = first_batch[1][i]
+        exp_img = copy.deepcopy(sim_img).permute(1, 2, 0).cpu().detach().numpy()
+
         pred_imgs = trainer.forward_pass(sim_img[torch.newaxis, ...], None)['student_recon'][0].permute(1, 2, 0).cpu().detach().numpy()
         ax[i, 0].imshow(exp_img)
         ax[i, 1].imshow(pred_imgs)
         ax[i, 1].axis('off')
         if i == 0:
             ax[i, 1].set_title('Reconstructed\n(Output)', loc='center')
-        for j in range(1, 9):
-            ax[i, j+1].imshow(sim_img.permute(1, 2, 0).cpu().detach().numpy()[..., j-1])
-            ax[i, j+1].axis('off')
-            if i == 0 and j == 1:
-                ax[i, j+1].set_title(f'Cell Count', loc='center')
-            elif i == 0:
-                ax[i, j+1].set_title(f'{state_names[j-1]}', loc='center')
+        if 0:
+            for j in range(1, 9):
+                ax[i, j+1].imshow(sim_img.permute(1, 2, 0).cpu().detach().numpy()[..., j-1])
+                ax[i, j+1].axis('off')
+                if i == 0 and j == 1:
+                    ax[i, j+1].set_title(f'Cell Count', loc='center')
+                elif i == 0:
+                    ax[i, j+1].set_title(f'{state_names[j-1]}', loc='center')
         if i == 0:
             ax[i, 0].set_title('Experimental\n(Target)', loc='center')
         ax[i, 0].axis('off')

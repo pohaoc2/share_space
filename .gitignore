@@ -6,6 +6,8 @@
 *.tiff
 *.pth
 *.json
+*.zip
+
 
 # Editors
 .vscode/

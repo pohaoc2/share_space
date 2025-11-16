@@ -6,6 +6,8 @@ import numpy as np
 from scipy import linalg
 from typing import Tuple
 from tqdm import tqdm
+import copy
+
 
 class FIDScore:
     """Frechet Inception Distance for evaluating image quality"""
@@ -82,9 +84,10 @@ class FIDScore:
         fake_features_list = []
         
         for batch in tqdm(dataloader, desc="Computing FID"):
-            sim_imgs = batch['simulation'].to(self.device)
-            exp_imgs = batch['experimental'].to(self.device)
-            
+            #sim_imgs = batch['simulation'].to(self.device)
+            sim_imgs = batch[0].to(self.device)
+            exp_imgs = batch[1].to(self.device)
+            exp_imgs = copy.deepcopy(sim_imgs)
             # Generate fake experimental images
             with torch.no_grad():
                 fake_imgs, _, _ = model(sim_imgs)
@@ -142,8 +145,10 @@ class MetricsEvaluator:
         
         print("Computing PSNR and SSIM...")
         for batch in tqdm(dataloader):
-            sim_imgs = batch['simulation'].to(self.device)
-            exp_imgs = batch['experimental'].to(self.device)
+            #sim_imgs = batch['simulation'].to(self.device)
+            sim_imgs = batch[0].to(self.device)
+            exp_imgs = batch[1].to(self.device)
+            exp_imgs = copy.deepcopy(sim_imgs)
             
             with torch.no_grad():
                 pred_imgs, _, _ = model(sim_imgs)
