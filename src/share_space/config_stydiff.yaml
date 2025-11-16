@@ -31,11 +31,11 @@ data:
 # Training configuration
 training:
   batch_size: 16
-  epochs: 1
+  epochs: 2
   learning_rate: 0.0001
   weight_decay: 0.0001
   train_split: 0.8
-  eval_only: false  # Set to true to only evaluate
+  eval_only: true  # Set to true to only evaluate
 
 # Loss function weights
 # Based on paper's ablation study (Table 4)
