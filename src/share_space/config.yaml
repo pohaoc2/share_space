@@ -28,7 +28,7 @@ loss:
 
 # Data Configuration
 data:
-  exp_dir: ../../data/val2017
+  exp_dir: ../../data/coco/val2017
   sim_dir: ../../data/small_style
   train_samples: 50
   val_samples: 10

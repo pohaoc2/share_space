@@ -136,7 +136,7 @@ def main(config_path='config.yaml'):
     
     if config['training']['eval_only']: # load the best model and evaluate
         print("Loading best model...")
-        model.load_state_dict(torch.load(config['checkpoint']['load_path'], weights_only=False)['model_state_dict'])
+        model.load_state_dict(torch.load(config['checkpoint']['load_path'], map_location=device, weights_only=False)['model_state_dict'])
     else:
         for epoch in range(config['training']['epochs']):
             print(f"\nEpoch {epoch + 1}/{config['training']['epochs']}")
