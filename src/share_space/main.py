@@ -137,6 +137,7 @@ def main(config_path='config.yaml'):
     if config['training']['eval_only']: # load the best model and evaluate
         print("Loading best model...")
         model.load_state_dict(torch.load(config['checkpoint']['load_path'], map_location=device, weights_only=False)['model_state_dict'])
+        model.to(device)  # Ensure model is on the correct device
     else:
         for epoch in range(config['training']['epochs']):
             print(f"\nEpoch {epoch + 1}/{config['training']['epochs']}")
@@ -216,7 +217,9 @@ def main(config_path='config.yaml'):
         sim_img = first_batch[1][i]
         exp_img = copy.deepcopy(sim_img).permute(1, 2, 0).cpu().detach().numpy()
 
-        pred_imgs = trainer.forward_pass(sim_img[torch.newaxis, ...], None)['student_recon'][0].permute(1, 2, 0).cpu().detach().numpy()
+        # Move sim_img to device before forward pass
+        sim_img_device = sim_img[torch.newaxis, ...].to(device)
+        pred_imgs = trainer.forward_pass(sim_img_device, None)['student_recon'][0].permute(1, 2, 0).cpu().detach().numpy()
         ax[i, 0].imshow(exp_img)
         ax[i, 1].imshow(pred_imgs)
         ax[i, 1].axis('off')

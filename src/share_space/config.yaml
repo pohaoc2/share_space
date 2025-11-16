@@ -11,7 +11,7 @@ model:
 
 # Training Parameters
 training:
-  eval_only: false
+  eval_only: true #false
   epochs: 2
   batch_size: 32
   learning_rate: 0.0001
