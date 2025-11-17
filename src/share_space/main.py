@@ -29,14 +29,107 @@ def load_config(config_path='config.yaml'):
         config = yaml.safe_load(f)
     return config
 
-def main(config_path='config.yaml'):
-    # Load configuration
-    config = load_config(config_path)
+def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val_loader, 
+                evaluator, stage_config, stage_name, loss_history, best_psnr, device, 
+                run_final_eval=False):
+    """
+    Train a single stage of the model.
     
-    # Set device
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"Using device: {device}")
+    Args:
+        model: The model to train
+        trainer: Trainer instance
+        optimizer: Optimizer instance
+        scheduler: Learning rate scheduler
+        loss_fn: Loss function
+        train_loader: Training data loader
+        val_loader: Validation data loader
+        evaluator: Metrics evaluator
+        stage_config: Configuration dictionary for this stage
+        stage_name: Name of the stage (e.g., 'stage_1', 'stage_2')
+        loss_history: Dictionary to track loss history
+        best_psnr: Current best PSNR value
+        device: Device to run on
+        run_final_eval: Whether to run final evaluation and visualization
+        
+    Returns:
+        Updated best_psnr value
+    """
+    if stage_config['eval_only']:  # load the best model and evaluate
+        print(f"Loading best model for {stage_name}...")
+        model.load_state_dict(torch.load(stage_config['load_path'], map_location=device, weights_only=False)['model_state_dict'])
+        model.to(device)  # Ensure model is on the correct device
+    else:
+        for epoch in range(stage_config['epochs']):
+            print(f"\n{stage_name.upper()} - Epoch {epoch + 1}/{stage_config['epochs']}")
+            
+            # Train
+            train_losses = trainer.train_epoch(
+                train_loader, optimizer, loss_fn, mask_ratio=stage_config['mask_ratio']
+            )
+            print(f"Train losses: {train_losses}")
+            
+            # Store losses for plotting
+            for key in loss_history.keys():
+                if key in train_losses:
+                    loss_history[key].append(train_losses[key])
+            
+            # Validate
+            if (epoch + 1) % stage_config['eval_every'] == 0:
+                print("Evaluating...")
+                metrics = evaluator.evaluate_model(model, val_loader)
+                print(f"Validation metrics: {metrics}")
+                
+                # Save best model
+                if metrics['psnr'] > best_psnr:
+                    best_psnr = metrics['psnr']
+                    save_path = Path(stage_config['save_dir']) / 'best_model.pth'
+                    save_path.parent.mkdir(parents=True, exist_ok=True)
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'metrics': metrics
+                    }, save_path)
+                    print(f"Saved best model with PSNR: {best_psnr:.4f}")
+            
+            # Step scheduler
+            scheduler.step()
+        
+        print(f"Training {stage_name} complete!")
     
+    # Final evaluation
+    if run_final_eval:
+        print(f"\nFinal evaluation for {stage_name}...")
+        final_metrics = evaluator.evaluate_model(model, val_loader)
+        print(f"Final metrics: {final_metrics}")
+        
+        # Save final metrics
+        metrics_path = Path(stage_config['save_dir']) / 'final_metrics.json'
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(metrics_path, 'w') as f:
+            json.dump(final_metrics, f, indent=2)
+        
+        # Visualize loss history
+        if not stage_config['eval_only'] and len(loss_history['recon']) > 0:
+            plt.figure(figsize=(12, 5))
+            epochs = range(1, len(loss_history['recon']) + 1)
+            plt.plot(epochs, loss_history['recon'], label='Reconstruction Loss', marker='o')
+            if len(loss_history['distill_cls']) > 0:
+                plt.plot(epochs, loss_history['distill_cls'], label='Distillation Loss', marker='s')
+            if len(loss_history['mask_recon']) > 0:
+                plt.plot(epochs, loss_history['mask_recon'], label='Masked Reconstruction Loss', marker='^')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.title(f'{stage_name.upper()} - Training Losses Over Epochs')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(Path(stage_config['save_dir']) / 'loss_history.png', dpi=300, bbox_inches='tight')
+            plt.show()
+    
+    return best_psnr
+
+def _get_stage_1_model(config, device, stage_name):
     # Model configuration
     encoder_config = {
         'img_size': config['model']['img_size'],
@@ -71,7 +164,7 @@ def main(config_path='config.yaml'):
     trainer = TeacherStudentTrainer(
         student_model=model,
         device=device,
-        teacher_momentum=config['training']['teacher_momentum'],
+        teacher_momentum=config['training'][stage_name]['teacher_momentum'],
         diffusion_model=DiffusionModel(
             unet_config=config['diffusion']['unet_config'],
             timesteps=config['diffusion']['timesteps'],
@@ -91,45 +184,56 @@ def main(config_path='config.yaml'):
     # Create optimizer
     optimizer = optim.AdamW(
         model.parameters(),
-        lr=config['training']['learning_rate'],
-        weight_decay=config['training']['weight_decay']
+        lr=config['training'][stage_name]['learning_rate'],
+        weight_decay=config['training'][stage_name]['weight_decay']
     )
     
     # Create scheduler
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
-        T_max=config['training']['epochs'],
-        eta_min=config['training']['learning_rate'] * 0.01
+        T_max=config['training'][stage_name]['epochs'],
+        eta_min=config['training'][stage_name]['learning_rate'] * 0.01
     )
+    evaluator = MetricsEvaluator(device=device)
+    return model, trainer, optimizer, scheduler, loss_fn, evaluator
+
+def main(config_path='config.yaml'):
+    # Load configuration
+    config = load_config(config_path)
     
+    # Set device
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"Using device: {device}")
+
     # Create dataloaders
     print("Creating dataloaders...")
     train_loader, val_loader = get_real_dataloaders(
         exp_dir=config['data']['exp_dir'],
         sim_dir=config['data']['sim_dir'],
-        batch_size=config['training']['batch_size'],
+        batch_size=config['data']['batch_size'],
         num_workers=config['data']['num_workers'],
         img_size=config['model']['img_size'],
-        train_split=config['training']['train_split']
+        train_split=config['data']['train_split']
     )
 
     # Visualize the first batch of the training data
     if 0:#True:
         print("Visualizing first batch of the training data...")
-        first_batch = next(iter(train_loader))
+        first_batch = next(iter(val_loader))
         fig, ax = plt.subplots(2, 5, figsize=(12, 6))
         for i in range(5):
-            ax[0, i].imshow(first_batch['simulation'][i].permute(1, 2, 0).cpu().numpy())
-            ax[1, i].imshow(first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy())
+            #ax[0, i].imshow(first_batch['simulation'][i].permute(1, 2, 0).cpu().numpy())
+            #ax[1, i].imshow(first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy())
+            ax[0, i].imshow(first_batch[0][i].permute(1, 2, 0).cpu().numpy())
+            ax[1, i].imshow(first_batch[1][i].permute(1, 2, 0).cpu().numpy())
             ax[0, i].axis('off')
             ax[1, i].axis('off')
         plt.show()
         plt.tight_layout()
     
-    # Create evaluator
-    evaluator = MetricsEvaluator(device=device)
     
-    # Training loop
+    # Train stage 1
+    model, trainer, optimizer, scheduler, loss_fn, evaluator = _get_stage_1_model(config, device, "stage_1")
     print("Starting training...")
     best_psnr = float('-inf')
     
@@ -139,77 +243,23 @@ def main(config_path='config.yaml'):
         'distill_cls': [],
         'mask_recon': []
     }
-    
-    if config['training']['eval_only']: # load the best model and evaluate
-        print("Loading best model...")
-        model.load_state_dict(torch.load(config['checkpoint']['load_path'], map_location=device, weights_only=False)['model_state_dict'])
-        model.to(device)  # Ensure model is on the correct device
-    else:
-        for epoch in range(config['training']['epochs']):
-            print(f"\nEpoch {epoch + 1}/{config['training']['epochs']}")
-            
-            # Train
-            train_losses = trainer.train_epoch(
-                train_loader, optimizer, loss_fn, mask_ratio=config['training']['mask_ratio']
-            )
-            print(f"Train losses: {train_losses}")
-            
-            # Store losses for plotting
-            for key in loss_history.keys():
-                if key in train_losses:
-                    loss_history[key].append(train_losses[key])
-            
-            # Validate
-            if (epoch + 1) % config['checkpoint']['eval_every'] == 0:
-                print("Evaluating...")
-                metrics = evaluator.evaluate_model(model, val_loader)
-                print(f"Validation metrics: {metrics}")
-                
-                # Save best model
-                if metrics['psnr'] > best_psnr:
-                    best_psnr = metrics['psnr']
-                    save_path = Path(config['checkpoint']['save_dir']) / 'best_model.pth'
-                    save_path.parent.mkdir(parents=True, exist_ok=True)
-                    torch.save({
-                        'epoch': epoch,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'metrics': metrics
-                    }, save_path)
-                    print(f"Saved best model with PSNR: {best_psnr:.4f}")
-            
-            # Step scheduler
-            scheduler.step()
-        
-        print("Training complete!")
-    
-    # Final evaluation
-    if 0:
-        print("\nFinal evaluation...")
-        final_metrics = evaluator.evaluate_model(model, val_loader)
-        print(f"Final metrics: {final_metrics}")
-        
-        # Save final metrics
-        metrics_path = Path(config['checkpoint']['save_dir']) / 'final_metrics.json'
-        with open(metrics_path, 'w') as f:
-            json.dump(final_metrics, f, indent=2)
-        
-        # Visualize loss history
-        if not config['training']['eval_only'] and len(loss_history['recon']) > 0:
-            plt.figure(figsize=(12, 5))
-            epochs = range(1, len(loss_history['recon']) + 1)
-            plt.plot(epochs, loss_history['recon'], label='Reconstruction Loss', marker='o')
-            if len(loss_history['distill_cls']) > 0:
-                plt.plot(epochs, loss_history['distill_cls'], label='Distillation Loss', marker='s')
-            if len(loss_history['mask_recon']) > 0:
-                plt.plot(epochs, loss_history['mask_recon'], label='Masked Reconstruction Loss', marker='^')
-            plt.xlabel('Epoch')
-            plt.ylabel('Loss')
-            plt.title('Training Losses Over Epochs')
-            plt.legend()
-            plt.grid(True, alpha=0.3)
-            plt.tight_layout()
-            plt.show()
+    # Train stage 1
+    best_psnr = train_stage(
+        model=model,
+        trainer=trainer,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        loss_fn=loss_fn,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        evaluator=evaluator,
+        stage_config=config['training']['stage_1'],
+        stage_name='stage_1',
+        loss_history=loss_history,
+        best_psnr=best_psnr,
+        device=device,
+        run_final_eval=False  # Set to True to run final evaluation and visualization
+    )
 
     # Visualize the reconstructed images with the original images
     n_viz = 3
@@ -219,8 +269,8 @@ def main(config_path='config.yaml'):
     for i in range(n_viz):
         #exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
         #sim_img = first_batch['simulation'][i]
-        exp_img = first_batch[0][i].permute(1, 2, 0).cpu().detach().numpy()
-        sim_img = first_batch[1][i]
+        exp_img = first_batch[1][i].permute(1, 2, 0).cpu().detach().numpy()
+        sim_img = first_batch[0][i]
         exp_img = copy.deepcopy(sim_img).permute(1, 2, 0).cpu().detach().numpy()
 
         # Move sim_img to device before forward pass

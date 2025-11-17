@@ -2,7 +2,7 @@
 model:
   in_chans: 3
   out_chans: 3
-  img_size: 224
+  img_size: 240
   patch_size: 8
   embed_dim: 64
   depth: 2
@@ -25,15 +25,28 @@ diffusion:
 
 # Training Parameters
 training:
-  eval_only: false
-  epochs: 5
-  batch_size: 32
-  learning_rate: 0.0001
-  weight_decay: 0.05
-  teacher_momentum: 0.996
-  mask_ratio: 0.5
-  train_split: 0.9
+  stage_1:
+    eval_only: false
+    epochs: 1
+    
+    learning_rate: 0.0001
+    weight_decay: 0.05
+    teacher_momentum: 0.996
+    mask_ratio: 0.5
 
+    save_dir: ./checkpoints/stage_1
+    load_path: ./checkpoints/stage_1/best_model.pth
+    eval_every: 1
+  stage_2:
+    eval_only: false
+    epochs: 5
+    learning_rate: 0.0001
+    weight_decay: 0.05
+    teacher_momentum: 0.996
+    mask_ratio: 0.5
+    save_dir: ./checkpoints/stage_2
+    load_path: ./checkpoints/stage_2/best_model.pth
+    eval_every: 5
 # Loss Weights
 loss:
   recon_weight: 1.0
@@ -43,14 +56,9 @@ loss:
 
 # Data Configuration
 data:
-  exp_dir: ../../data/coco/val2017
-  sim_dir: ../../data/small_style
-  train_samples: 50
+  exp_dir: ../../data/sim
+  sim_dir: ../../data/sim
+  batch_size: 16
   val_samples: 10
   num_workers: 4
-
-# Checkpoint and Evaluation
-checkpoint:
-  load_path: ./checkpoints/best_model.pth
-  save_dir: ./checkpoints
-  eval_every: 5
+  train_split: 0.9
