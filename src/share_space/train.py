@@ -6,15 +6,18 @@ from torch.utils.data import DataLoader
 from typing import Dict, Optional
 import copy
 from tqdm import tqdm
+from share_space.diffusion import DiffusionModel
+import math
 
 class TeacherStudentTrainer:
     """Teacher-Student training following DINOv2 approach"""
     def __init__(self, student_model: nn.Module, device: str = 'cuda', 
-                 teacher_momentum: float = 0.996, center_momentum: float = 0.9):
+                 teacher_momentum: float = 0.996, center_momentum: float = 0.9,
+                 diffusion_model: DiffusionModel = None):
         self.device = device
         self.student = student_model.to(device)
         self.teacher = copy.deepcopy(student_model).to(device)
-        
+        self.diffusion = diffusion_model.to(device)
         # Freeze teacher
         for param in self.teacher.parameters():
             param.requires_grad = False
@@ -102,8 +105,33 @@ class TeacherStudentTrainer:
         
         # Forward pass
         outputs = self.forward_pass(sim_images, mask)
+
+        latent_vector = outputs['teacher_cls']
+        # Convert latent_vector to shape (B, diffusion.unet.in_channels, H, W)
+        H = W = int(math.sqrt(latent_vector.shape[1]/self.diffusion.unet.in_channels))
+        latent_vector = latent_vector.view(B, self.diffusion.unet.in_channels, H, W)
+
+        t = torch.randint(
+            0, 
+            self.diffusion.timesteps, 
+            (sim_images.shape[0],),
+            device=sim_images.device
+        )
+        
+        noise = torch.randn_like(latent_vector)
+        
+        alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
+        sqrt_alpha_t = torch.sqrt(alpha_t)
+        sqrt_one_minus_alpha_t = torch.sqrt(1.0 - alpha_t)
+        
+        noisy_latent = sqrt_alpha_t * latent_vector + sqrt_one_minus_alpha_t * noise
+        noise_pred = self.diffusion.unet(
+            noisy_latent,
+            t
+        )
+
         # Compute losses
-        losses = loss_fn(outputs, exp_images, mask, patch_size)
+        losses = loss_fn(outputs, exp_images, mask, patch_size, noisy_latent, noise_pred)
         total_loss = sum(losses.values())
         
         # Backward

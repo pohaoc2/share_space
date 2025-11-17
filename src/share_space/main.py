@@ -11,7 +11,7 @@ from share_space.dataset import get_dummy_dataloaders#, get_real_dataloaders
 from share_space.dataset_real import get_real_dataloaders
 from share_space.evaluation import MetricsEvaluator
 import copy
-
+from share_space.diffusion import DiffusionModel
 
 state_names = {
     1: 'OTHER',
@@ -57,7 +57,6 @@ def main(config_path='config.yaml'):
         'patch_size': config['model']['patch_size'],
         'out_chans': config['model']['out_chans']
     }
-    
     # Create model
     print("Creating model...")
     model = Sim2ExpModel(
@@ -72,14 +71,21 @@ def main(config_path='config.yaml'):
     trainer = TeacherStudentTrainer(
         student_model=model,
         device=device,
-        teacher_momentum=config['training']['teacher_momentum']
+        teacher_momentum=config['training']['teacher_momentum'],
+        diffusion_model=DiffusionModel(
+            unet_config=config['diffusion']['unet_config'],
+            timesteps=config['diffusion']['timesteps'],
+            beta_start=config['diffusion']['beta_start'],
+            beta_end=config['diffusion']['beta_end']
+        )
     )
     
     # Create loss function
     loss_fn = Sim2ExpLoss(
         recon_weight=config['loss']['recon_weight'],
         distill_weight=config['loss']['distill_weight'],
-        mask_weight=config['loss']['mask_weight']
+        mask_weight=config['loss']['mask_weight'],
+        diffusion_weight=config['loss']['diffusion_weight']
     )
     
     # Create optimizer

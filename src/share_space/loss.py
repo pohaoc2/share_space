@@ -7,12 +7,14 @@ from typing import Dict, Tuple
 class Sim2ExpLoss(nn.Module):
     """Combined loss for simulation to experimental translation"""
     def __init__(self, recon_weight: float = 1.0, distill_weight: float = 1.0, 
-                 mask_weight: float = 1.0, perceptual_weight: float = 0.1):
+                 mask_weight: float = 1.0, perceptual_weight: float = 0.1,
+                 diffusion_weight: float = 1.0):
         super().__init__()
         self.recon_weight = recon_weight
         self.distill_weight = distill_weight
         self.mask_weight = mask_weight
         self.perceptual_weight = perceptual_weight
+        self.diffusion_weight = diffusion_weight
     
     def reconstruction_loss(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """L1 + L2 reconstruction loss"""
@@ -96,8 +98,14 @@ class Sim2ExpLoss(nn.Module):
         
         return loss
     
+    def diffusion_loss(self, noisy_latent: torch.Tensor, noise_pred: torch.Tensor) -> torch.Tensor:
+        """
+        Diffusion loss
+        """
+        return F.mse_loss(noise_pred, noisy_latent)
+    
     def forward(self, outputs: Dict[str, torch.Tensor], target: torch.Tensor,
-                mask: torch.Tensor, patch_size: Tuple[int, int]) -> Dict[str, torch.Tensor]:
+                mask: torch.Tensor, patch_size: Tuple[int, int], noisy_latent: torch.Tensor, noise_pred: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
         Compute all losses
         
@@ -133,6 +141,11 @@ class Sim2ExpLoss(nn.Module):
         # Masked reconstruction loss
         losses['mask_recon'] = self.mask_weight * self.masked_reconstruction_loss(
             outputs['student_recon'], target, mask, patch_size
+        )
+
+        # Diffusion loss
+        losses['diffusion'] = self.diffusion_weight * self.diffusion_loss(
+            noisy_latent, noise_pred
         )
         return losses
 

@@ -192,7 +192,7 @@ class VisionTransformer(nn.Module):
             x = block(x)
         
         x = self.norm(x)
-        return x[:, 0], x[:, 1:]  # cls_token, patch_tokens
+        return x[:, 0], x[:, 1:]  # cls_token, patch_tokens (B, embed_dim) (B, num_patches, embed_dim)
     
     def get_num_patches_for_image(self, img_height: int, img_width: int) -> int:
         """Helper method to get number of patches for given image dimensions"""
