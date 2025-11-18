@@ -13,7 +13,7 @@ class ConvDecoder(nn.Module):
                  hidden_dims: Optional[List[int]] = None):
         super().__init__()
         self.embed_dim = embed_dim
-        
+        self.out_chans = out_chans
         # Handle both int and tuple for img_size and patch_size
         if isinstance(img_size, int):
             self.img_height, self.img_width = img_size, img_size
@@ -87,7 +87,7 @@ class ConvDecoder(nn.Module):
             dummy_input = torch.zeros(1, self.num_patches, self.embed_dim)
             try:
                 output = self.forward(dummy_input)
-                expected_shape = (1, 3, self.img_height, self.img_width)
+                expected_shape = (1, self.out_chans, self.img_height, self.img_width)
                 if output.shape != expected_shape:
                     print(f"Warning: Decoder output shape {output.shape} doesn't match expected {expected_shape}")
                     print(f"This may require interpolation to fix.")

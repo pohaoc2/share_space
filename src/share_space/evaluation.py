@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from torchvision.models import Inception_V3_Weights
 import numpy as np
 from scipy import linalg
 from typing import Tuple
@@ -15,7 +16,7 @@ class FIDScore:
         from torchvision import models
         
         # Use InceptionV3 for FID calculation
-        inception = models.inception_v3(pretrained=True, transform_input=False).to(device)
+        inception = models.inception_v3(weights=Inception_V3_Weights.DEFAULT, transform_input=False).to(device)
         inception.eval()
         
         for param in inception.parameters():

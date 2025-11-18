@@ -118,8 +118,8 @@ class StyleTransferModel(nn.Module):
         Returns:
             reconstructed image (B, C, H, W)
         """
-        content_features_cls, content_features_patches = self.encoder(x_content)
-        style_features_cls, style_features_patches = self.encoder(x_style)
+        _, content_features_cls, content_features_patches = self.encoder(x_content)
+        _, style_features_cls, style_features_patches = self.encoder(x_style)
         fused_features_patches = self.adain(content_features_patches, style_features_patches)
         fused_features_cls = self.adain(content_features_cls, style_features_cls)
         reconstructed = self.decoder(fused_features_patches)

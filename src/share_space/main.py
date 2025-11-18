@@ -17,6 +17,7 @@ from share_space.diffusion import DiffusionModel
 from share_space.models.adain import AdaINFusion
 
 state_names = {
+    0: 'Cell Count',
     1: 'OTHER',
     2: 'INFLAMMATORY',
     3: 'HEALTHY_EPITHELIAL',
@@ -207,7 +208,7 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         'embed_dim': config['model']['embed_dim'],
         'img_size': config['model']['img_size'],
         'patch_size': config['model']['patch_size'],
-        'out_chans': config['model']['out_chans']
+        'out_chans': config['model']['exp_chans']
     }
     loss_fn = StyleTransferLoss(
         use_diffusion=config['training'][stage_name]['use_diffusion'],
@@ -217,7 +218,7 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         diffusion_weight=config['loss']['diffusion_weight']
     )
     style_model = StyleTransferModel(
-        feature_extractor=feature_extractor.encoder,
+        feature_extractor=feature_extractor,
         decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         adain=AdaINFusion()
     )
@@ -314,7 +315,6 @@ def main(config_path='config.yaml'):
         device=device,
         run_final_eval=False  # Set to True to run final evaluation and visualization
     )
-    asd()
     style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
     best_psnr = train_stage(
         model=style_model,
@@ -332,43 +332,70 @@ def main(config_path='config.yaml'):
         device=device,
         run_final_eval=False  # Set to True to run final evaluation and visualization
     )
-    asd()
-    # Visualize the reconstructed images with the original images
-    n_viz = 3
-    print(f"Visualizing {n_viz} samples of reconstructed images in the first batch of the validation data...")
-    first_batch = next(iter(val_loader))
-    fig, ax = plt.subplots(n_viz, 2, figsize=(3 * 2, 3 * n_viz))
-    for i in range(n_viz):
-        #exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
-        #sim_img = first_batch['simulation'][i]
-        exp_img = first_batch[1][i].permute(1, 2, 0).cpu().detach().numpy()
-        sim_img = first_batch[0][i]
-        exp_img = copy.deepcopy(sim_img).permute(1, 2, 0).cpu().detach().numpy()
+    if 0:
+        # Visualize the reconstructed images with the original images
+        n_viz = 3
+        print(f"Visualizing {n_viz} samples of reconstructed images in the first batch of the validation data...")
+        first_batch = next(iter(val_loader))
+        fig, ax = plt.subplots(n_viz, 2, figsize=(3 * 2, 3 * n_viz))
+        for i in range(n_viz):
+            #exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
+            #sim_img = first_batch['simulation'][i]
+            exp_img = first_batch[1][i].permute(1, 2, 0).cpu().detach().numpy()
+            sim_img = first_batch[0][i]
+            exp_img = copy.deepcopy(sim_img).permute(1, 2, 0).cpu().detach().numpy()
 
-        # Move sim_img to device before forward pass
-        sim_img_device = sim_img[torch.newaxis, ...].to(device)
-        pred_imgs = trainer.forward_pass(sim_img_device, None)['student_recon'][0].permute(1, 2, 0).cpu().detach().numpy()
-        ax[i, 0].imshow(exp_img)
-        ax[i, 1].imshow(pred_imgs)
-        ax[i, 1].axis('off')
-        if i == 0:
-            ax[i, 1].set_title('Reconstructed\n(Output)', loc='center')
-        if 0:
-            for j in range(1, 9):
-                ax[i, j+1].imshow(sim_img.permute(1, 2, 0).cpu().detach().numpy()[..., j-1])
-                ax[i, j+1].axis('off')
-                if i == 0 and j == 1:
-                    ax[i, j+1].set_title(f'Cell Count', loc='center')
-                elif i == 0:
-                    ax[i, j+1].set_title(f'{state_names[j-1]}', loc='center')
-        if i == 0:
-            ax[i, 0].set_title('Experimental\n(Target)', loc='center')
+            # Move sim_img to device before forward pass
+            sim_img_device = sim_img[torch.newaxis, ...].to(device)
+            pred_imgs = trainer.forward_pass(sim_img_device, None)['student_recon'][0].permute(1, 2, 0).cpu().detach().numpy()
+            ax[i, 0].imshow(exp_img)
+            ax[i, 1].imshow(pred_imgs)
+            ax[i, 1].axis('off')
+            if i == 0:
+                ax[i, 1].set_title('Reconstructed\n(Output)', loc='center')
+            if 0:
+                for j in range(1, 9):
+                    ax[i, j+1].imshow(sim_img.permute(1, 2, 0).cpu().detach().numpy()[..., j-1])
+                    ax[i, j+1].axis('off')
+                    if i == 0 and j == 1:
+                        ax[i, j+1].set_title(f'Cell Count', loc='center')
+                    elif i == 0:
+                        ax[i, j+1].set_title(f'{state_names[j-1]}', loc='center')
+            if i == 0:
+                ax[i, 0].set_title('Experimental\n(Target)', loc='center')
+            ax[i, 0].axis('off')
+        plt.tight_layout()
+        plt.subplots_adjust(hspace=0.01, wspace=0.05)
+        plt.savefig('reconstructed_images.png', dpi=300, bbox_inches='tight', transparent=True)
+        plt.show()
+    visualize_style_transfer(style_model, val_loader, device, n_viz=3, state=0)
+def visualize_style_transfer(style_model, val_loader, device, n_viz=5, state=0):
+    print(f"Visualizing style transfer...")
+    style_model.eval()
+    first_batch = next(iter(val_loader))
+    fig, ax = plt.subplots(n_viz, 3, figsize=(3 * 3, 3 * n_viz))
+    for i in range(n_viz):
+        exp_img = first_batch['experimental'][i].unsqueeze(0) # style
+        sim_img = first_batch['simulation'][i].unsqueeze(0) # content
+        print(f"Sim image shape: {sim_img.shape}")
+        print(f"Exp image shape: {exp_img.shape}")
+        pred_imgs = style_model(sim_img.to(device), exp_img.to(device))[0].permute(1, 2, 0).cpu().detach().numpy()
+
+        ax[i, 0].imshow(exp_img[0].permute(1, 2, 0).cpu().detach().numpy())
+        ax[i, 1].imshow(sim_img[0].permute(1, 2, 0)[..., state].cpu().detach().numpy())
+        ax[i, 2].imshow(pred_imgs)
         ax[i, 0].axis('off')
+        ax[i, 1].axis('off')
+        ax[i, 2].axis('off')
+        if i == 0:
+            ax[i, 0].set_title('Exp (Style)', loc='center')
+            ax[i, 1].set_title(f'Sim (Content) {state_names[state]}', loc='center')
+            ax[i, 2].set_title('Style Transferred\n(Output)', loc='center')
+    plt.show()
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.01, wspace=0.05)
-    plt.savefig('reconstructed_images.png', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig('style_transfer.png', dpi=300, bbox_inches='tight', transparent=True)
     plt.show()
-    
 if __name__ == '__main__':
     import sys
     
