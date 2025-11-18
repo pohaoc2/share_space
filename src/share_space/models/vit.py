@@ -144,7 +144,7 @@ class VisionTransformer(nn.Module):
                  attn_drop_rate: float = 0.):
         super().__init__()
         self.num_features = self.embed_dim = embed_dim
-        
+        #self.map_content_style = nn.Conv2d(in_channels_content, in_channels_style, kernel_size=1)
         self.patch_embed = PatchEmbed(
             img_size=img_size, 
             patch_size=patch_size, 

@@ -7,8 +7,8 @@ import torch.optim as optim
 from share_space.models.sim2exp_model import Sim2ExpModel, StyleTransferModel
 from share_space.train import TeacherStudentTrainer
 from share_space.loss import Sim2ExpLoss, StyleTransferLoss
-from share_space.dataset import get_dummy_dataloaders#, get_real_dataloaders
-from share_space.dataset_real import get_real_dataloaders
+from share_space.dataset import get_dummy_dataloaders, get_real_dataloaders
+#from share_space.dataset_real import get_real_dataloaders
 from share_space.evaluation import MetricsEvaluator
 from share_space.train_style import StyleTransferTrainer
 from share_space.models.decoders import ConvDecoder, TransformerDecoder

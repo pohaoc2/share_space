@@ -150,7 +150,7 @@ class SimExpPairedDataset(Dataset):
                  sim_dir: str = "sim", 
                  img_size: int = 224,
                  transform: Optional[T.Compose] = None,
-                 debugging: bool = False):
+                 debugging: bool = True):#False):
         """
         Args:
             exp_dir: Directory containing experimental images
