@@ -17,6 +17,7 @@ from share_space.diffusion import DiffusionModel
 from share_space.models.adain import AdaINFusion
 
 state_names = {
+    0: 'Cell Count',
     1: 'OTHER',
     2: 'INFLAMMATORY',
     3: 'HEALTHY_EPITHELIAL',
@@ -314,45 +315,56 @@ def main(config_path='config.yaml'):
         device=device,
         run_final_eval=False  # Set to True to run final evaluation and visualization
     )
-    asd()
-    style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
-    best_psnr = train_stage(
-        model=style_model,
-        trainer=trainer_style,
-        optimizer=optimizer,
-        scheduler=scheduler,
-        loss_fn=loss_fn,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        evaluator=evaluator,
-        stage_config=config['training']['stage_2'],
-        stage_name='stage_2',
-        loss_history=loss_history,
-        best_psnr=best_psnr,
-        device=device,
-        run_final_eval=False  # Set to True to run final evaluation and visualization
-    )
-    asd()
+    if 0:
+        style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
+        best_psnr = train_stage(
+            model=style_model,
+            trainer=trainer_style,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            loss_fn=loss_fn,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            evaluator=evaluator,
+            stage_config=config['training']['stage_2'],
+            stage_name='stage_2',
+            loss_history=loss_history,
+            best_psnr=best_psnr,
+            device=device,
+            run_final_eval=False  # Set to True to run final evaluation and visualization
+        )
+    #asd()
     # Visualize the reconstructed images with the original images
     n_viz = 3
     print(f"Visualizing {n_viz} samples of reconstructed images in the first batch of the validation data...")
     first_batch = next(iter(val_loader))
-    fig, ax = plt.subplots(n_viz, 2, figsize=(3 * 2, 3 * n_viz))
+    fig, ax = plt.subplots(n_viz, 4, figsize=(3 * 4, 3 * n_viz))
     for i in range(n_viz):
-        #exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
-        #sim_img = first_batch['simulation'][i]
-        exp_img = first_batch[1][i].permute(1, 2, 0).cpu().detach().numpy()
-        sim_img = first_batch[0][i]
-        exp_img = copy.deepcopy(sim_img).permute(1, 2, 0).cpu().detach().numpy()
+        exp_img = first_batch['experimental'][i].to(device)
+        sim_img = first_batch['simulation'][i].to(device)
+        #exp_img = first_batch[1][i].permute(1, 2, 0).cpu().detach().numpy()
+        #sim_img = first_batch[0][i]
+        #exp_img = copy.deepcopy(sim_img).permute(1, 2, 0).cpu().detach().numpy()
 
         # Move sim_img to device before forward pass
         sim_img_device = sim_img[torch.newaxis, ...].to(device)
-        pred_imgs = trainer.forward_pass(sim_img_device, None)['student_recon'][0].permute(1, 2, 0).cpu().detach().numpy()
-        ax[i, 0].imshow(exp_img)
-        ax[i, 1].imshow(pred_imgs)
+        exp_img_device = exp_img[torch.newaxis, ...].to(device)
+        pred_sim_img = model(sim_img_device)[0][0].permute(1, 2, 0).cpu().detach().numpy()
+        pred_exp_img = model(exp_img_device)[0][0].permute(1, 2, 0).cpu().detach().numpy()
+        sim_channels_viz = 5
+        ax[i, 0].imshow(exp_img.permute(1, 2, 0).cpu().detach().numpy()[..., :3])
+        ax[i, 1].imshow(pred_exp_img[..., :3])
+        ax[i, 2].imshow(sim_img.permute(1, 2, 0).cpu().detach().numpy()[..., sim_channels_viz])
+        ax[i, 3].imshow(pred_sim_img[..., sim_channels_viz])
+        ax[i, 0].axis('off')
         ax[i, 1].axis('off')
+        ax[i, 2].axis('off')
+        ax[i, 3].axis('off')
         if i == 0:
-            ax[i, 1].set_title('Reconstructed\n(Output)', loc='center')
+            ax[i, 0].set_title('Exp (Input)', loc='center')
+            ax[i, 1].set_title('Exp (Reconstructed)', loc='center')
+            ax[i, 2].set_title(f'Sim (Input) {state_names[sim_channels_viz]}', loc='center')
+            ax[i, 3].set_title(f'Sim (Reconstructed) {state_names[sim_channels_viz]}', loc='center')
         if 0:
             for j in range(1, 9):
                 ax[i, j+1].imshow(sim_img.permute(1, 2, 0).cpu().detach().numpy()[..., j-1])
@@ -361,9 +373,8 @@ def main(config_path='config.yaml'):
                     ax[i, j+1].set_title(f'Cell Count', loc='center')
                 elif i == 0:
                     ax[i, j+1].set_title(f'{state_names[j-1]}', loc='center')
-        if i == 0:
-            ax[i, 0].set_title('Experimental\n(Target)', loc='center')
-        ax[i, 0].axis('off')
+            
+        
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.01, wspace=0.05)
     plt.savefig('reconstructed_images.png', dpi=300, bbox_inches='tight', transparent=True)
