@@ -137,7 +137,8 @@ def _get_stage_1_model(config, device, stage_name):
     encoder_config = {
         'img_size': config['model']['img_size'],
         'patch_size': config['model']['patch_size'],
-        'in_chans': config['model']['in_chans'],
+        'sim_chans': config['model']['sim_chans'],
+        'exp_chans': config['model']['exp_chans'],
         'embed_dim': config['model']['embed_dim'],
         'depth': config['model']['depth'],
         'num_heads': config['model']['num_heads'],
@@ -151,7 +152,8 @@ def _get_stage_1_model(config, device, stage_name):
         'embed_dim': config['model']['embed_dim'],
         'img_size': config['model']['img_size'],
         'patch_size': config['model']['patch_size'],
-        'out_chans': config['model']['out_chans']
+        'sim_chans': config['model']['sim_chans'],
+        'exp_chans': config['model']['exp_chans']
     }
     # Create model
     print("Creating model...")
@@ -312,6 +314,7 @@ def main(config_path='config.yaml'):
         device=device,
         run_final_eval=False  # Set to True to run final evaluation and visualization
     )
+    asd()
     style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
     best_psnr = train_stage(
         model=style_model,

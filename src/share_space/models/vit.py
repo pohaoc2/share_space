@@ -134,7 +134,7 @@ class VisionTransformer(nn.Module):
     def __init__(self, 
                  img_size: Union[int, Tuple[int, int]] = 224, 
                  patch_size: Union[int, Tuple[int, int]] = 16, 
-                 in_chans: int = 3, 
+                 internal_chans: int = 3, 
                  embed_dim: int = 768, 
                  depth: int = 12, 
                  num_heads: int = 12, 
@@ -144,11 +144,10 @@ class VisionTransformer(nn.Module):
                  attn_drop_rate: float = 0.):
         super().__init__()
         self.num_features = self.embed_dim = embed_dim
-        #self.map_content_style = nn.Conv2d(in_channels_content, in_channels_style, kernel_size=1)
         self.patch_embed = PatchEmbed(
             img_size=img_size, 
             patch_size=patch_size, 
-            in_chans=in_chans, 
+            in_chans=internal_chans, 
             embed_dim=embed_dim
         )
         num_patches = self.patch_embed.num_patches

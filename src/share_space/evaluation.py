@@ -145,27 +145,32 @@ class MetricsEvaluator:
         
         print("Computing PSNR and SSIM...")
         for batch in tqdm(dataloader):
-            #sim_imgs = batch['simulation'].to(self.device)
-            sim_imgs = batch[0].to(self.device)
-            exp_imgs = batch[1].to(self.device)
-            exp_imgs = copy.deepcopy(sim_imgs)
+            sim_imgs = batch['simulation'].to(self.device)
+            exp_imgs = batch['experimental'].to(self.device)
+            #sim_imgs = batch[0].to(self.device)
+            #exp_imgs = batch[1].to(self.device)
+            #exp_imgs = copy.deepcopy(sim_imgs)
             
             with torch.no_grad():
                 if stage_name == 'stage_2':
-                    pred_imgs = model(sim_imgs, exp_imgs)
+                    pred_imgs = model(sim_imgs, exp_imgs)  
+                    # Compute metrics
+                    psnr = self.compute_psnr(pred_imgs, exp_imgs)
+                    ssim_val = self.compute_ssim(pred_imgs, exp_imgs)
+                    psnr_scores.append(psnr)
+                    ssim_scores.append(ssim_val)
                 else:
-                    pred_imgs, _, _ = model(sim_imgs)
+                    pred_imgs_sim, _, _ = model(sim_imgs)
+                    pred_imgs_exp, _, _ = model(exp_imgs)
+                    psnr_val_sim = self.compute_psnr(pred_imgs_sim, sim_imgs)
+                    psnr_val_exp = self.compute_psnr(pred_imgs_exp, exp_imgs)
+                    ssim_val_sim = self.compute_ssim(pred_imgs_sim, sim_imgs)
+                    ssim_val_exp = self.compute_ssim(pred_imgs_exp, exp_imgs)
+                    psnr_scores.append(psnr_val_sim)
+                    psnr_scores.append(psnr_val_exp)
+                    ssim_scores.append(ssim_val_sim)
+                    ssim_scores.append(ssim_val_exp)
             
-            # Compute metrics
-            psnr = self.compute_psnr(pred_imgs, exp_imgs)
-            ssim_val = self.compute_ssim(pred_imgs, exp_imgs)
-            
-            psnr_scores.append(psnr)
-            ssim_scores.append(ssim_val)
-        
-        # Compute FID
-        #print("Computing FID...")
-        #fid_score = self.fid_calculator.compute_fid_from_loader(model, dataloader)
         
         results = {
             #'fid': fid_score,

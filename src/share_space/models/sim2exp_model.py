@@ -8,41 +8,96 @@ from share_space.models.adain import AdaINFusion
 
 
 class Sim2ExpModel(nn.Module):
-    """Complete model for simulation to experimental image translation"""
+    """Complete model with channel projection layers"""
     def __init__(self, encoder_config: dict, decoder_type: str = 'conv', decoder_config: dict = None):
         super().__init__()
         
-        self.encoder = VisionTransformer(**encoder_config)
+        # Use a fixed internal channel representation (e.g., 8 channels)
+        self.sim_chans = encoder_config['sim_chans']
+        self.exp_chans = encoder_config['exp_chans']
+        internal_chans = max(self.sim_chans, self.exp_chans)
         
+        # Projection layers to convert inputs to internal representation
+        self.proj_sim_to_internal = nn.Conv2d(self.sim_chans, internal_chans, kernel_size=1)
+        self.proj_exp_to_internal = nn.Conv2d(self.exp_chans, internal_chans, kernel_size=1)
+        
+        # Single encoder for internal representation
+        vit_allowed_keys = {
+            'img_size',
+            'patch_size',
+            'embed_dim',
+            'depth',
+            'num_heads',
+            'mlp_ratio',
+            'qkv_bias',
+            'drop_rate',
+            'attn_drop_rate'
+        }
+        vit_config = {k: v for k, v in encoder_config.items() if k in vit_allowed_keys}
+        self.encoder = VisionTransformer(internal_chans=internal_chans, **vit_config)
+        
+        # Single decoder that outputs internal representation
         if decoder_config is None:
             decoder_config = {
                 'embed_dim': encoder_config['embed_dim'],
                 'img_size': encoder_config['img_size'],
                 'patch_size': encoder_config['patch_size'],
-                'out_chans': encoder_config['out_chans']
             }
-        
+        decoder_config['out_chans'] = internal_chans
         if decoder_type == 'conv':
+            decoder_allowed_keys = {
+                'embed_dim',
+                'img_size',
+                'patch_size',
+                'out_chans',
+                'hidden_dims'
+            }
+            decoder_config = {k: v for k, v in decoder_config.items() if k in decoder_allowed_keys}
             self.decoder = ConvDecoder(**decoder_config)
         elif decoder_type == 'transformer':
+            decoder_allowed_keys = {
+                'embed_dim',
+                'depth',
+                'num_heads',
+                'img_size',
+                'patch_size',
+                'out_chans'
+            }
+            decoder_config = {k: v for k, v in decoder_config.items() if k in decoder_allowed_keys}
             self.decoder = TransformerDecoder(**decoder_config)
         else:
             raise ValueError(f"Unknown decoder type: {decoder_type}")
+        
+        # Projection layers to convert back to original channels
+        self.proj_internal_to_sim = nn.Conv2d(internal_chans, self.sim_chans, kernel_size=1)
+        self.proj_internal_to_exp = nn.Conv2d(internal_chans, self.exp_chans, kernel_size=1)
     
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            x: input image (B, C, H, W)
-            mask: optional mask for masked image modeling (B, num_patches)
-        Returns:
-            reconstructed image, cls_token features, patch_token features
-        """
-        cls_token, patch_tokens = self.encoder(x)
+        in_chans = x.shape[1]
+        
+        # Project to internal representation
+        if in_chans == self.sim_chans:
+            x_internal = self.proj_sim_to_internal(x)
+        elif in_chans == self.exp_chans:
+            x_internal = self.proj_exp_to_internal(x)
+        else:
+            raise ValueError(f"Unsupported input channels: {in_chans}")
+        
+        # Encode and decode
+        cls_token, patch_tokens = self.encoder(x_internal)
         
         if isinstance(self.decoder, TransformerDecoder):
-            reconstructed = self.decoder(patch_tokens, mask)
+            reconstructed_internal = self.decoder(patch_tokens, mask)
         else:
-            reconstructed = self.decoder(patch_tokens)
+            reconstructed_internal = self.decoder(patch_tokens)
+        
+        # Project back to original channels
+        if in_chans == self.sim_chans:
+            reconstructed = self.proj_internal_to_sim(reconstructed_internal)
+        elif in_chans == self.exp_chans:
+            reconstructed = self.proj_internal_to_exp(reconstructed_internal)
+        else:
+            raise ValueError(f"Unsupported input channels: {in_chans}")
         
         return reconstructed, cls_token, patch_tokens
 

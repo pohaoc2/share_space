@@ -150,7 +150,7 @@ class SimExpPairedDataset(Dataset):
                  sim_dir: str = "sim", 
                  img_size: int = 224,
                  transform: Optional[T.Compose] = None,
-                 debugging: bool = True):#False):
+                 debugging: bool = False):
         """
         Args:
             exp_dir: Directory containing experimental images
@@ -214,7 +214,7 @@ class SimExpPairedDataset(Dataset):
             else:
                 print(f"Warning: Missing simulation files for {exp_path.name}")
         
-        return pairs
+        return pairs[:]
     
     def _rgb_to_state_index(self, rgb_image: np.ndarray) -> np.ndarray:
         """
