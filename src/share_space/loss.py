@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Dict, Tuple
-
+from typing import Optional
 class Sim2ExpLoss(nn.Module):
     """Combined loss for simulation to experimental translation"""
     def __init__(self, recon_weight: float = 1.0, distill_weight: float = 1.0, 
@@ -171,3 +171,85 @@ class PerceptualLoss(nn.Module):
         pred_features = self.vgg(pred)
         target_features = self.vgg(target)
         return F.mse_loss(pred_features, target_features)
+
+
+class StyleTransferLoss(nn.Module):
+    """
+    Multi-component loss function for style transfer
+    Implements equations 6, 7, 8 (optional), and 9 from the paper
+    """
+    def __init__(self, 
+                 use_diffusion: bool = True,
+                 content_weight: float = 1.0,
+                 style_weight: float = 1.0,
+                 element_weight: float = 1.0,
+                 diffusion_weight: float = 1.0):
+        super().__init__()
+        self.use_diffusion = use_diffusion
+        self.content_weight = content_weight
+        self.style_weight = style_weight
+        self.element_weight = element_weight
+        self.diffusion_weight = diffusion_weight
+    
+    def content_loss(self, content_latent: torch.Tensor, output_latent: torch.Tensor) -> torch.Tensor:
+        """
+        Content Loss (Equation 6): L_ImageLatent = ||VDVAE(X_i) - VDVAE(X_output)||²
+        Preserves content structure in latent space
+        """
+        return F.mse_loss(content_latent, output_latent)
+    
+    def style_loss(self, style_latent: torch.Tensor, output_latent: torch.Tensor) -> torch.Tensor:
+        """
+        Style Loss (Equation 7): L_StyleLatent = ||VDVAE(X_s) - VDVAE(X_output)||²_2
+        Ensures style consistency in latent space
+        """
+        return F.mse_loss(style_latent, output_latent)
+    
+    def diffusion_loss(self, noise_pred: torch.Tensor, noise_target: torch.Tensor) -> torch.Tensor:
+        """
+        Diffusion Model Loss (Equation 8): L_diff = -log P_θ(p(x_t|X_0), t, A(X_s, X_i))
+        Optimizes noise alignment in diffusion process
+        
+        In practice, this is implemented as MSE between predicted and actual noise
+        """
+        return F.mse_loss(noise_pred, noise_target)
+    
+    def element_loss(self, adain_features: torch.Tensor, output_latent: torch.Tensor) -> torch.Tensor:
+        """
+        Element Loss (Equation 9): L_Element = ||A(X_s, X_i) - VDVAE(X_output)||²_2
+        Measures fine-grained differences at element level
+        """
+        return F.mse_loss(adain_features, output_latent)
+    
+    def forward(self, 
+                content_latent: torch.Tensor,
+                style_latent: torch.Tensor,
+                output_latent: torch.Tensor,
+                adain_features: torch.Tensor,
+                noise_pred: Optional[torch.Tensor] = None,
+                noise_target: Optional[torch.Tensor] = None) -> Dict[str, torch.Tensor]:
+        """
+        Compute total loss and individual components
+        
+        Returns:
+            Dictionary with all loss components
+        """
+        losses = {}
+        
+        # Content loss (Eq. 6)
+        losses['content'] = self.content_weight * self.content_loss(content_latent, output_latent)
+        
+        # Style loss (Eq. 7)
+        losses['style'] = self.style_weight * self.style_loss(style_latent, output_latent)
+        
+        # Element loss (Eq. 9)
+        losses['element'] = self.element_weight * self.element_loss(adain_features, output_latent)
+        
+        # Diffusion loss (Eq. 8) - optional
+        if self.use_diffusion and noise_pred is not None and noise_target is not None:
+            losses['diffusion'] = self.diffusion_weight * self.diffusion_loss(noise_pred, noise_target)
+        
+        # Total loss
+        losses['total'] = sum(losses.values())
+        
+        return losses

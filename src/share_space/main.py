@@ -4,14 +4,17 @@ import json
 import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
-from share_space.models.sim2exp_model import Sim2ExpModel
+from share_space.models.sim2exp_model import Sim2ExpModel, StyleTransferModel
 from share_space.train import TeacherStudentTrainer
-from share_space.loss import Sim2ExpLoss
+from share_space.loss import Sim2ExpLoss, StyleTransferLoss
 from share_space.dataset import get_dummy_dataloaders#, get_real_dataloaders
 from share_space.dataset_real import get_real_dataloaders
 from share_space.evaluation import MetricsEvaluator
+from share_space.train_style import StyleTransferTrainer
+from share_space.models.decoders import ConvDecoder, TransformerDecoder
 import copy
 from share_space.diffusion import DiffusionModel
+from share_space.models.adain import AdaINFusion
 
 state_names = {
     1: 'OTHER',
@@ -76,7 +79,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
             # Validate
             if (epoch + 1) % stage_config['eval_every'] == 0:
                 print("Evaluating...")
-                metrics = evaluator.evaluate_model(model, val_loader)
+                metrics = evaluator.evaluate_model(model, val_loader, stage_name)
                 print(f"Validation metrics: {metrics}")
                 
                 # Save best model
@@ -183,7 +186,7 @@ def _get_stage_1_model(config, device, stage_name):
     
     # Create optimizer
     optimizer = optim.AdamW(
-        model.parameters(),
+        model.decoder.parameters(), # if use_diffusion, also include diffusion model parameters
         lr=config['training'][stage_name]['learning_rate'],
         weight_decay=config['training'][stage_name]['weight_decay']
     )
@@ -196,6 +199,55 @@ def _get_stage_1_model(config, device, stage_name):
     )
     evaluator = MetricsEvaluator(device=device)
     return model, trainer, optimizer, scheduler, loss_fn, evaluator
+
+def _get_stage_2_model(config, device, stage_name, feature_extractor):
+    decoder_config = {
+        'embed_dim': config['model']['embed_dim'],
+        'img_size': config['model']['img_size'],
+        'patch_size': config['model']['patch_size'],
+        'out_chans': config['model']['out_chans']
+    }
+    loss_fn = StyleTransferLoss(
+        use_diffusion=config['training'][stage_name]['use_diffusion'],
+        content_weight=config['loss']['content_weight'],
+        style_weight=config['loss']['style_weight'],
+        element_weight=config['loss']['element_weight'],
+        diffusion_weight=config['loss']['diffusion_weight']
+    )
+    style_model = StyleTransferModel(
+        feature_extractor=feature_extractor.encoder,
+        decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
+        adain=AdaINFusion()
+    )
+    if config['training'][stage_name]['use_diffusion']:
+        diffusion_model = DiffusionModel(
+            unet_config=config['diffusion']['unet_config'],
+            timesteps=config['diffusion']['timesteps'],
+            beta_start=config['diffusion']['beta_start'],
+            beta_end=config['diffusion']['beta_end']
+        )
+    else:
+        diffusion_model = None
+    trainer_style = StyleTransferTrainer(
+        model=style_model,
+        device=device,
+        use_diffusion=config['training'][stage_name]['use_diffusion'],
+        diffusion_model=diffusion_model,
+    )
+    optimizer = optim.AdamW(
+        list(style_model.decoder.parameters()) + (list(diffusion_model.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
+        lr=config['training'][stage_name]['learning_rate'],
+        weight_decay=config['training'][stage_name]['weight_decay']
+    )
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=config['training'][stage_name]['epochs'],
+        eta_min=config['training'][stage_name]['learning_rate'] * 0.01
+    )
+
+    evaluator = MetricsEvaluator(device=device)
+    return style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator
+
 
 def main(config_path='config.yaml'):
     # Load configuration
@@ -260,7 +312,24 @@ def main(config_path='config.yaml'):
         device=device,
         run_final_eval=False  # Set to True to run final evaluation and visualization
     )
-
+    style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
+    best_psnr = train_stage(
+        model=style_model,
+        trainer=trainer_style,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        loss_fn=loss_fn,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        evaluator=evaluator,
+        stage_config=config['training']['stage_2'],
+        stage_name='stage_2',
+        loss_history=loss_history,
+        best_psnr=best_psnr,
+        device=device,
+        run_final_eval=False  # Set to True to run final evaluation and visualization
+    )
+    asd()
     # Visualize the reconstructed images with the original images
     n_viz = 3
     print(f"Visualizing {n_viz} samples of reconstructed images in the first batch of the validation data...")

@@ -11,140 +11,9 @@ from torch.utils.data import DataLoader
 from typing import Dict, Optional, Tuple
 from tqdm import tqdm
 import copy
-
-
-class AdaINFusion(nn.Module):
-    """
-    Adaptive Instance Normalization for fusing content and style features
-    Implements Equation 5 from the paper
-    """
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, content_features: torch.Tensor, style_features: torch.Tensor) -> torch.Tensor:
-        """
-        Apply AdaIN to fuse content and style features
-        
-        Args:
-            content_features: Features from content image (B, C, H, W) or (B, N, C)
-            style_features: Features from style image (B, C, H, W) or (B, N, C)
-        
-        Returns:
-            Fused features: F_adapted = γ(F_c) · σ(F_s) + μ(F_s)
-        """
-        # Ensure features are in (B, C, ...) format
-        if content_features.dim() == 3:  # (B, N, C) -> (B, C, N)
-            content_features = content_features.transpose(1, 2)
-            style_features = style_features.transpose(1, 2)
-            transposed = True
-        else:
-            transposed = False
-        
-        # Calculate statistics over spatial dimensions
-        # For (B, C, H, W), calculate over (H, W)
-        # For (B, C, N), calculate over (N,)
-        dims = list(range(2, content_features.dim()))
-        
-        # Content normalization: γ(F_c)
-        content_mean = content_features.mean(dim=dims, keepdim=True)
-        content_std = content_features.std(dim=dims, keepdim=True) + 1e-5
-        content_normalized = (content_features - content_mean) / content_std
-        
-        # Style statistics: μ(F_s) and σ(F_s)
-        style_mean = style_features.mean(dim=dims, keepdim=True)
-        style_std = style_features.std(dim=dims, keepdim=True) + 1e-5
-        
-        # Apply AdaIN: F_adapted = γ(F_c) · σ(F_s) + μ(F_s)
-        fused_features = content_normalized * style_std + style_mean
-        
-        # Restore original shape if needed
-        if transposed:
-            fused_features = fused_features.transpose(1, 2)
-        
-        return fused_features
-
-
-class StyleTransferLoss(nn.Module):
-    """
-    Multi-component loss function for style transfer
-    Implements equations 6, 7, 8 (optional), and 9 from the paper
-    """
-    def __init__(self, 
-                 use_diffusion: bool = True,
-                 content_weight: float = 1.0,
-                 style_weight: float = 1.0,
-                 element_weight: float = 1.0,
-                 diffusion_weight: float = 1.0):
-        super().__init__()
-        self.use_diffusion = use_diffusion
-        self.content_weight = content_weight
-        self.style_weight = style_weight
-        self.element_weight = element_weight
-        self.diffusion_weight = diffusion_weight
-    
-    def content_loss(self, content_latent: torch.Tensor, output_latent: torch.Tensor) -> torch.Tensor:
-        """
-        Content Loss (Equation 6): L_ImageLatent = ||VDVAE(X_i) - VDVAE(X_output)||²
-        Preserves content structure in latent space
-        """
-        return F.mse_loss(content_latent, output_latent)
-    
-    def style_loss(self, style_latent: torch.Tensor, output_latent: torch.Tensor) -> torch.Tensor:
-        """
-        Style Loss (Equation 7): L_StyleLatent = ||VDVAE(X_s) - VDVAE(X_output)||²_2
-        Ensures style consistency in latent space
-        """
-        return F.mse_loss(style_latent, output_latent)
-    
-    def diffusion_loss(self, noise_pred: torch.Tensor, noise_target: torch.Tensor) -> torch.Tensor:
-        """
-        Diffusion Model Loss (Equation 8): L_diff = -log P_θ(p(x_t|X_0), t, A(X_s, X_i))
-        Optimizes noise alignment in diffusion process
-        
-        In practice, this is implemented as MSE between predicted and actual noise
-        """
-        return F.mse_loss(noise_pred, noise_target)
-    
-    def element_loss(self, adain_features: torch.Tensor, output_latent: torch.Tensor) -> torch.Tensor:
-        """
-        Element Loss (Equation 9): L_Element = ||A(X_s, X_i) - VDVAE(X_output)||²_2
-        Measures fine-grained differences at element level
-        """
-        return F.mse_loss(adain_features, output_latent)
-    
-    def forward(self, 
-                content_latent: torch.Tensor,
-                style_latent: torch.Tensor,
-                output_latent: torch.Tensor,
-                adain_features: torch.Tensor,
-                noise_pred: Optional[torch.Tensor] = None,
-                noise_target: Optional[torch.Tensor] = None) -> Dict[str, torch.Tensor]:
-        """
-        Compute total loss and individual components
-        
-        Returns:
-            Dictionary with all loss components
-        """
-        losses = {}
-        
-        # Content loss (Eq. 6)
-        losses['content'] = self.content_weight * self.content_loss(content_latent, output_latent)
-        
-        # Style loss (Eq. 7)
-        losses['style'] = self.style_weight * self.style_loss(style_latent, output_latent)
-        
-        # Element loss (Eq. 9)
-        losses['element'] = self.element_weight * self.element_loss(adain_features, output_latent)
-        
-        # Diffusion loss (Eq. 8) - optional
-        if self.use_diffusion and noise_pred is not None and noise_target is not None:
-            losses['diffusion'] = self.diffusion_weight * self.diffusion_loss(noise_pred, noise_target)
-        
-        # Total loss
-        losses['total'] = sum(losses.values())
-        
-        return losses
-
+from share_space.loss import StyleTransferLoss
+from share_space.models.sim2exp_model import StyleTransferModel
+import math
 
 class StyleTransferTrainer:
     """
@@ -157,19 +26,14 @@ class StyleTransferTrainer:
     4. Optional diffusion model for refinement
     """
     def __init__(self,
-                 feature_extractor: nn.Module,
-                 decoder: nn.Module,
+                 model: StyleTransferModel,
                  device: str = 'cuda',
                  use_diffusion: bool = True,
                  diffusion_model: Optional[nn.Module] = None,
-                 content_weight: float = 1.0,
-                 style_weight: float = 1.0,
-                 element_weight: float = 1.0,
-                 diffusion_weight: float = 1.0):
+                 ):
         """
         Args:
-            feature_extractor: Pre-trained feature extractor (will be frozen)
-            decoder: Decoder network to reconstruct images
+            model: StyleTransferModel
             device: Device to run on
             use_diffusion: Whether to use diffusion model refinement
             diffusion_model: Optional diffusion model for refinement
@@ -180,18 +44,15 @@ class StyleTransferTrainer:
         """
         self.device = device
         self.use_diffusion = use_diffusion
-        
+        self.model = model.to(device)
         # Feature extractor (frozen)
-        self.feature_extractor = feature_extractor.to(device)
+        self.feature_extractor = model.encoder.to(device)
         self.feature_extractor.eval()
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
-        
+        self.decoder = model.decoder.to(device)
         # AdaIN fusion module
-        self.adain = AdaINFusion().to(device)
-        
-        # Decoder (trainable)
-        self.decoder = decoder.to(device)
+        self.adain = model.adain.to(device)
         
         # Optional diffusion model
         if use_diffusion and diffusion_model is not None:
@@ -199,16 +60,7 @@ class StyleTransferTrainer:
         else:
             self.diffusion = None
             self.use_diffusion = False
-        
-        # Loss function
-        self.criterion = StyleTransferLoss(
-            use_diffusion=self.use_diffusion,
-            content_weight=content_weight,
-            style_weight=style_weight,
-            element_weight=element_weight,
-            diffusion_weight=diffusion_weight
-        ).to(device)
-    
+            
     @torch.no_grad()
     def extract_features(self, images: torch.Tensor) -> torch.Tensor:
         """
@@ -218,24 +70,10 @@ class StyleTransferTrainer:
             images: Input images (B, C, H, W)
         
         Returns:
-            Features in appropriate format
+            Features in appropriate format (B, embed_dim)
         """
         self.feature_extractor.eval()
-        
-        # Handle different feature extractor outputs
-        outputs = self.feature_extractor(images)
-        
-        # If the feature extractor returns a tuple/dict, extract the relevant features
-        if isinstance(outputs, tuple):
-            # Assume format: (reconstruction, cls_token, patch_tokens)
-            # We use patch_tokens for style transfer
-            features = outputs[-1] if len(outputs) > 1 else outputs[0]
-        elif isinstance(outputs, dict):
-            # Try common keys
-            features = outputs.get('features', outputs.get('patch_tokens', outputs.get('latent')))
-        else:
-            features = outputs
-        
+        features = self.feature_extractor(images)
         return features
     
     def forward_pass(self, 
@@ -257,18 +95,18 @@ class StyleTransferTrainer:
         
         # Step 1: Extract features (frozen)
         with torch.no_grad():
-            content_features = self.extract_features(content_images)
-            style_features = self.extract_features(style_images)
+            content_features_cls, content_features_patches = self.extract_features(content_images)
+            style_features_cls, style_features_patches = self.extract_features(style_images)
         
         # Step 2: Fuse features using AdaIN (Equation 5)
-        fused_features = self.adain(content_features, style_features)
-        
+        fused_features_patches = self.adain(content_features_patches, style_features_patches)
+        fused_features_cls = self.adain(content_features_cls, style_features_cls)
         # Step 3: Decode to generate output
-        output_images = self.decoder(fused_features)
+        output_images = self.decoder(fused_features_patches)
         
         # Step 4: Extract features from output for loss computation
         with torch.no_grad():
-            output_features = self.extract_features(output_images)
+            output_features_cls, output_features_patches = self.extract_features(output_images)
         
         # Step 5: Optional diffusion refinement
         noise_pred = None
@@ -282,40 +120,41 @@ class StyleTransferTrainer:
                 (content_images.shape[0],),
                 device=self.device
             )
-            
-            noise_target = torch.randn_like(fused_features)
-            
+            H = W = int(math.sqrt(fused_features_cls.shape[1]/self.diffusion.unet.in_channels))
+            fused_features_cls_image = fused_features_cls.view(fused_features_cls.shape[0], self.diffusion.unet.in_channels, H, W)
+            noise_target = torch.randn_like(fused_features_cls_image)
             # Get alpha values
             alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
             sqrt_alpha_t = torch.sqrt(alpha_t)
             sqrt_one_minus_alpha_t = torch.sqrt(1.0 - alpha_t)
             
             # Create noisy version
-            noisy_features = sqrt_alpha_t * fused_features + sqrt_one_minus_alpha_t * noise_target
+            noisy_features = sqrt_alpha_t * fused_features_cls_image + sqrt_one_minus_alpha_t * noise_target
             
             # Predict noise
             noise_pred = self.diffusion.unet(noisy_features, t)
-        
         return {
-            'content_features': content_features,
-            'style_features': style_features,
-            'fused_features': fused_features,
+            'content_features_cls': content_features_cls,
+            'style_features_cls': style_features_cls,
+            'fused_features_cls': fused_features_cls,
             'output_images': output_images,
-            'output_features': output_features,
+            'output_features_cls': output_features_cls,
             'noise_pred': noise_pred,
             'noise_target': noise_target
         }
     
     def train_step(self, 
                    batch: Dict[str, torch.Tensor],
-                   optimizer: torch.optim.Optimizer) -> Dict[str, float]:
+                   optimizer: torch.optim.Optimizer,
+                   loss_fn, mask_ratio: None) -> Dict[str, float]:
         """
         Single training step
         
         Args:
             batch: Dictionary with 'content' and 'style' keys
             optimizer: Optimizer for decoder (and optionally diffusion model)
-        
+            loss_fn: Loss function
+            mask_ratio: Not used in style transfer
         Returns:
             Dictionary of loss values
         """
@@ -324,18 +163,18 @@ class StyleTransferTrainer:
             self.diffusion.train()
         
         # Get images
-        content_images = batch['content'].to(self.device).float()
-        style_images = batch['style'].to(self.device).float()
+        content_images = batch[0].to(self.device).float()
+        style_images = batch[1].to(self.device).float()
         
         # Forward pass
         outputs = self.forward_pass(content_images, style_images)
         
         # Compute losses
-        losses = self.criterion(
-            content_latent=outputs['content_features'],
-            style_latent=outputs['style_features'],
-            output_latent=outputs['output_features'],
-            adain_features=outputs['fused_features'],
+        losses = loss_fn(
+            content_latent=outputs['content_features_cls'],
+            style_latent=outputs['style_features_cls'],
+            output_latent=outputs['output_features_cls'],
+            adain_features=outputs['fused_features_cls'],
             noise_pred=outputs['noise_pred'],
             noise_target=outputs['noise_target']
         )
@@ -356,13 +195,16 @@ class StyleTransferTrainer:
     
     def train_epoch(self,
                     dataloader: DataLoader,
-                    optimizer: torch.optim.Optimizer) -> Dict[str, float]:
+                    optimizer: torch.optim.Optimizer,
+                    loss_fn, mask_ratio: None) -> Dict[str, float]:
         """
         Train for one epoch
         
         Args:
             dataloader: DataLoader providing content-style pairs
             optimizer: Optimizer
+            loss_fn: Loss function
+            mask_ratio: Not used in style transfer
         
         Returns:
             Dictionary of average losses for the epoch
@@ -372,7 +214,7 @@ class StyleTransferTrainer:
         
         pbar = tqdm(dataloader, desc="Training")
         for batch in pbar:
-            losses = self.train_step(batch, optimizer)
+            losses = self.train_step(batch, optimizer, loss_fn, mask_ratio)
             
             # Accumulate losses
             for k, v in losses.items():

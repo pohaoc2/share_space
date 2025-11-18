@@ -131,7 +131,7 @@ class MetricsEvaluator:
         from pytorch_msssim import ssim
         return ssim(pred, target, data_range=1.0, size_average=True).item()
     
-    def evaluate_model(self, model: nn.Module, dataloader: DataLoader) -> dict:
+    def evaluate_model(self, model: nn.Module, dataloader: DataLoader, stage_name: str = 'stage_1') -> dict:
         """
         Comprehensive evaluation of model
         
@@ -151,7 +151,10 @@ class MetricsEvaluator:
             exp_imgs = copy.deepcopy(sim_imgs)
             
             with torch.no_grad():
-                pred_imgs, _, _ = model(sim_imgs)
+                if stage_name == 'stage_2':
+                    pred_imgs = model(sim_imgs, exp_imgs)
+                else:
+                    pred_imgs, _, _ = model(sim_imgs)
             
             # Compute metrics
             psnr = self.compute_psnr(pred_imgs, exp_imgs)

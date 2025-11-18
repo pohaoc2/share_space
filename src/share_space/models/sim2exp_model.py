@@ -4,6 +4,8 @@ import torch.nn as nn
 from typing import Tuple, Optional
 from share_space.models.vit import VisionTransformer
 from share_space.models.decoders import ConvDecoder, TransformerDecoder
+from share_space.models.adain import AdaINFusion
+
 
 class Sim2ExpModel(nn.Module):
     """Complete model for simulation to experimental image translation"""
@@ -43,3 +45,28 @@ class Sim2ExpModel(nn.Module):
             reconstructed = self.decoder(patch_tokens)
         
         return reconstructed, cls_token, patch_tokens
+
+class StyleTransferModel(nn.Module):
+    """Complete model for style transfer"""
+    def __init__(self, feature_extractor: nn.Module, decoder: nn.Module, adain: AdaINFusion):
+        super().__init__()
+        self.encoder = feature_extractor # frozen
+        self.decoder = decoder # trainable
+        self.adain = adain
+
+
+    def forward(self, x_content: torch.Tensor, x_style: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            x_content: content image (B, C, H, W)
+            x_style: style image (B, C, H, W)
+        Returns:
+            reconstructed image (B, C, H, W)
+        """
+        content_features_cls, content_features_patches = self.encoder(x_content)
+        style_features_cls, style_features_patches = self.encoder(x_style)
+        fused_features_patches = self.adain(content_features_patches, style_features_patches)
+        fused_features_cls = self.adain(content_features_cls, style_features_cls)
+        reconstructed = self.decoder(fused_features_patches)
+        return reconstructed
+        

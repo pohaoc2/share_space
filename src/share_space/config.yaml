@@ -27,31 +27,34 @@ diffusion:
 training:
   stage_1:
     eval_only: false
-    epochs: 1
-    
+    epochs: 0
     learning_rate: 0.0001
     weight_decay: 0.05
     teacher_momentum: 0.996
     mask_ratio: 0.5
-
     save_dir: ./checkpoints/stage_1
     load_path: ./checkpoints/stage_1/best_model.pth
     eval_every: 1
   stage_2:
     eval_only: false
-    epochs: 5
+    epochs: 1
     learning_rate: 0.0001
     weight_decay: 0.05
     teacher_momentum: 0.996
     mask_ratio: 0.5
     save_dir: ./checkpoints/stage_2
     load_path: ./checkpoints/stage_2/best_model.pth
-    eval_every: 5
+    eval_every: 1
+    use_diffusion: true
 # Loss Weights
 loss:
   recon_weight: 1.0
   distill_weight: 1.0
   mask_weight: 1.0
+  diffusion_weight: 1.0
+  content_weight: 1.0
+  style_weight: 1.0
+  element_weight: 1.0
   diffusion_weight: 1.0
 
 # Data Configuration
