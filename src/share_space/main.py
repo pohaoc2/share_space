@@ -34,7 +34,7 @@ def load_config(config_path='config.yaml'):
     return config
 
 def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val_loader, 
-                evaluator, stage_config, stage_name, loss_history, best_psnr, device, 
+                evaluator, stage_config, stage_name, best_psnr, device, 
                 run_final_eval=False):
     """
     Train a single stage of the model.
@@ -50,7 +50,6 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
         evaluator: Metrics evaluator
         stage_config: Configuration dictionary for this stage
         stage_name: Name of the stage (e.g., 'stage_1', 'stage_2')
-        loss_history: Dictionary to track loss history
         best_psnr: Current best PSNR value
         device: Device to run on
         run_final_eval: Whether to run final evaluation and visualization
@@ -58,6 +57,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
     Returns:
         Updated best_psnr value
     """
+    loss_history = {}
     if stage_config['eval_only']:  # load the best model and evaluate
         print(f"Loading best model for {stage_name} from {stage_config['load_path']}...")
         model.load_state_dict(torch.load(stage_config['load_path'], map_location=device, weights_only=False)['model_state_dict'])
@@ -73,9 +73,8 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
             print(f"Train losses: {train_losses}")
             
             # Store losses for plotting
-            for key in loss_history.keys():
-                if key in train_losses:
-                    loss_history[key].append(train_losses[key])
+            for key in train_losses.keys():
+                loss_history.setdefault(key, []).append(train_losses[key])
             
             # Validate
             if (epoch + 1) % stage_config['eval_every'] == 0:
@@ -114,14 +113,16 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
             json.dump(final_metrics, f, indent=2)
         
         # Visualize loss history
-        if not stage_config['eval_only'] and len(loss_history['recon']) > 0:
-            plt.figure(figsize=(12, 5))
-            epochs = range(1, len(loss_history['recon']) + 1)
-            plt.plot(epochs, loss_history['recon'], label='Reconstruction Loss', marker='o')
-            if len(loss_history['distill_cls']) > 0:
-                plt.plot(epochs, loss_history['distill_cls'], label='Distillation Loss', marker='s')
-            if len(loss_history['mask_recon']) > 0:
-                plt.plot(epochs, loss_history['mask_recon'], label='Masked Reconstruction Loss', marker='^')
+        for key, values in loss_history.items():
+            if isinstance(values[0], torch.Tensor):
+                loss_history[key] = [value.detach().cpu().numpy() for value in values]
+            else:
+                loss_history[key] = values
+        if not stage_config['eval_only']:
+            plt.figure(figsize=(8, 2))
+            epochs = range(1, len(loss_history[list(loss_history.keys())[0]]) + 1)
+            for key in loss_history.keys():
+                plt.plot(epochs, loss_history[key], label=key, marker='o')
             plt.xlabel('Epoch')
             plt.ylabel('Loss')
             plt.title(f'{stage_name.upper()} - Training Losses Over Epochs')
@@ -130,7 +131,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
             plt.tight_layout()
             plt.savefig(Path(stage_config['save_dir']) / f'loss_history_{stage_name}.png', dpi=300, bbox_inches='tight')
     
-    return best_psnr
+    return best_psnr, loss_history
 
 def _get_stage_1_model(config, device, stage_name):
     # Model configuration
@@ -289,15 +290,9 @@ def main(config_path='config.yaml'):
     model, trainer, optimizer, scheduler, loss_fn, evaluator = _get_stage_1_model(config, device, "stage_1")
     print("Starting training...")
     best_psnr = float('-inf')
-    
-    # Track losses across epochs
-    loss_history = {
-        'recon': [],
-        'distill_cls': [],
-        'mask_recon': []
-    }
+        
     # Train stage 1
-    best_psnr = train_stage(
+    best_psnr, loss_history = train_stage(
         model=model,
         trainer=trainer,
         optimizer=optimizer,
@@ -308,7 +303,6 @@ def main(config_path='config.yaml'):
         evaluator=evaluator,
         stage_config=config['training']['stage_1'],
         stage_name='stage_1',
-        loss_history=loss_history,
         best_psnr=best_psnr,
         device=device,
         run_final_eval=True  # Set to True to run final evaluation and visualization
@@ -326,7 +320,6 @@ def main(config_path='config.yaml'):
         evaluator=evaluator,
         stage_config=config['training']['stage_2'],
         stage_name='stage_2',
-        loss_history=loss_history,
         best_psnr=best_psnr,
         device=device,
         run_final_eval=True  # Set to True to run final evaluation and visualization
