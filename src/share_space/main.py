@@ -59,7 +59,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
         Updated best_psnr value
     """
     if stage_config['eval_only']:  # load the best model and evaluate
-        print(f"Loading best model for {stage_name}...")
+        print(f"Loading best model for {stage_name} from {stage_config['load_path']}...")
         model.load_state_dict(torch.load(stage_config['load_path'], map_location=device, weights_only=False)['model_state_dict'])
         model.to(device)  # Ensure model is on the correct device
     else:
@@ -314,6 +314,7 @@ def main(config_path='config.yaml'):
         run_final_eval=False  # Set to True to run final evaluation and visualization
     )
     style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
+    best_psnr = float('-inf')
     best_psnr = train_stage(
         model=style_model,
         trainer=trainer_style,

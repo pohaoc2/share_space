@@ -7,7 +7,7 @@ model:
   embed_dim: 64
   depth: 2
   num_heads: 2
-  decoder_type: transformer  # Options: 'conv', 'transformer'
+  decoder_type: conv  # Options: 'conv', 'transformer'
 
 diffusion:
   unet_config: {
@@ -69,8 +69,8 @@ data:
 # Visualization
 visualization:
   style_transfer:
-    save_dir: ./visualization/
+    save_dir: ./visualization/style_transfer/
     n_viz: 3
   reconstructed_images:
-    save_dir: ./visualization/
+    save_dir: ./visualization/reconstructed_images/
     n_viz: 3
