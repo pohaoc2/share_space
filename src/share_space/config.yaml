@@ -7,7 +7,7 @@ model:
   embed_dim: 64
   depth: 2
   num_heads: 2
-  decoder_type: conv  # Options: 'conv', 'transformer'
+  decoder_type: transformer  # Options: 'conv', 'transformer'
 
 diffusion:
   unet_config: {
@@ -19,32 +19,32 @@ diffusion:
     channel_mult: [1, 2, 4],
     num_heads: 4
   }
-  timesteps: 100
+  timesteps: 500
   beta_start: 0.0001
   beta_end: 0.02
 
 # Training Parameters
 training:
   stage_1:
-    eval_only: true
-    epochs: 5
+    eval_only: false
+    epochs: 10
     learning_rate: 0.0001
     weight_decay: 0.05
     teacher_momentum: 0.996
     mask_ratio: 0.5
     save_dir: ./checkpoints/stage_1
     load_path: ./checkpoints/stage_1/best_model.pth
-    eval_every: 1
+    eval_every: 2
   stage_2:
     eval_only: false
-    epochs: 1
+    epochs: 10
     learning_rate: 0.0001
     weight_decay: 0.05
     teacher_momentum: 0.996
     mask_ratio: 0.5
     save_dir: ./checkpoints/stage_2
     load_path: ./checkpoints/stage_2/best_model.pth
-    eval_every: 1
+    eval_every: 2
     use_diffusion: true
 # Loss Weights
 loss:
@@ -53,7 +53,7 @@ loss:
   mask_weight: 1.0
   diffusion_weight: 1.0
   content_weight: 1.0
-  style_weight: 1.0
+  style_weight: 5.0
   element_weight: 1.0
   diffusion_weight: 1.0
 
@@ -65,3 +65,12 @@ data:
   val_samples: 10
   num_workers: 4
   train_split: 0.9
+
+# Visualization
+visualization:
+  style_transfer:
+    save_dir: ./visualization/
+    n_viz: 3
+  reconstructed_images:
+    save_dir: ./visualization/
+    n_viz: 3

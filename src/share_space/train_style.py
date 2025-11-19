@@ -95,8 +95,8 @@ class StyleTransferTrainer:
         
         # Step 1: Extract features (frozen)
         with torch.no_grad():
-            content_features_cls, content_features_patches = self.extract_features(content_images)
-            style_features_cls, style_features_patches = self.extract_features(style_images)
+            _, content_features_cls, content_features_patches = self.extract_features(content_images)
+            _, style_features_cls, style_features_patches = self.extract_features(style_images)
         
         # Step 2: Fuse features using AdaIN (Equation 5)
         fused_features_patches = self.adain(content_features_patches, style_features_patches)
@@ -106,7 +106,7 @@ class StyleTransferTrainer:
         
         # Step 4: Extract features from output for loss computation
         with torch.no_grad():
-            output_features_cls, output_features_patches = self.extract_features(output_images)
+            _, output_features_cls, output_features_patches = self.extract_features(output_images)
         
         # Step 5: Optional diffusion refinement
         noise_pred = None
@@ -163,8 +163,10 @@ class StyleTransferTrainer:
             self.diffusion.train()
         
         # Get images
-        content_images = batch[0].to(self.device).float()
-        style_images = batch[1].to(self.device).float()
+        content_images = batch['simulation'].to(self.device).float()
+        style_images = batch['experimental'].to(self.device).float()
+        #content_images = batch[0].to(self.device).float()
+        #style_images = batch[1].to(self.device).float()
         
         # Forward pass
         outputs = self.forward_pass(content_images, style_images)
