@@ -18,13 +18,13 @@ from share_space.models.adain import AdaINFusion
 import os
 state_names = {
     0: 'Cell Count',
-    1: 'OTHER',
-    2: 'INFLAMMATORY',
-    3: 'HEALTHY_EPITHELIAL',
-    4: 'DYSPLASTIC_MALIGNANT',
-    5: 'FIBROBLAST',
-    6: 'MUSCLE',
-    7: 'ENDOTHELIAL'
+    # 1: 'OTHER',
+    # 2: 'INFLAMMATORY',
+    # 3: 'HEALTHY_EPITHELIAL',
+    # 4: 'DYSPLASTIC_MALIGNANT',
+    # 5: 'FIBROBLAST',
+    # 6: 'MUSCLE',
+    # 7: 'ENDOTHELIAL'
 }
 
 def load_config(config_path='config.yaml'):

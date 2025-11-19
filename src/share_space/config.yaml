@@ -1,6 +1,6 @@
 # Model Architecture
 model:
-  sim_chans: 3
+  sim_chans: 1
   exp_chans: 3
   img_size: 240
   patch_size: 8

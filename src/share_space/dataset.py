@@ -284,7 +284,7 @@ class SimExpPairedDataset(Dataset):
         
         return {
             'experimental': exp_tensor,      # (3, H, W), RGB normalized to [-1, 1]
-            'simulation': sim_tensor,        # (8, H, W), count + 7 one-hot state channels
+            'simulation': sim_tensor[:1],        # (8, H, W), count + 7 one-hot state channels
             'exp_path': str(exp_path),
             'sim_state_path': str(sim_state_path),
             'sim_count_path': str(sim_count_path)
