@@ -276,15 +276,19 @@ def main(config_path='config.yaml'):
         first_batch = next(iter(val_loader))
         fig, ax = plt.subplots(2, 5, figsize=(12, 6))
         for i in range(5):
-            ax[0, i].imshow(first_batch['simulation'][i].permute(1, 2, 0).cpu().numpy())
-            ax[1, i].imshow(first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy())
+            sim_img = first_batch['simulation'][i].permute(1, 2, 0).cpu().numpy()
+            exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
+            sim_img = sim_img * 0.5 + 0.5
+            exp_img = exp_img * 0.5 + 0.5
+            ax[0, i].imshow(sim_img[..., 0], vmin=0, vmax=1, cmap='gray')
+            ax[1, i].imshow(exp_img)
             #ax[0, i].imshow(first_batch[0][i].permute(1, 2, 0).cpu().numpy())
             #ax[1, i].imshow(first_batch[1][i].permute(1, 2, 0).cpu().numpy())
             ax[0, i].axis('off')
             ax[1, i].axis('off')
         plt.tight_layout()
         plt.show()
-
+    #asd()
     # Train stage 1
     model, trainer, optimizer, scheduler, loss_fn, evaluator = _get_stage_1_model(config, device, "stage_1")
     print("Starting training...")
@@ -330,6 +334,7 @@ def main(config_path='config.yaml'):
         n_viz=config['visualization']['reconstructed_images']['n_viz'],
         states=list(state_names.keys())
     )
+    return
     visualize_style_transfer(style_model,
         val_loader,
         device,
@@ -348,14 +353,21 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
     sim_imgs = first_batch['simulation']
     pred_sim_imgs, _, _ = model(sim_imgs.to(device))
     pred_exp_imgs, _, _ = model(exp_imgs.to(device))
+    # Renormalize the images to [0, 1]
+    # Reverse exp_transform: denormalize from [-1, 1] to [0, 1]
+    # Original: normalized = (x - 0.5) / 0.5, so reverse: x = normalized * 0.5 + 0.5
+    exp_imgs = exp_imgs * 0.5 + 0.5
+    pred_exp_imgs = pred_exp_imgs * 0.5 + 0.5
+    sim_imgs = sim_imgs * 0.5 + 0.5
+    pred_sim_imgs = pred_sim_imgs * 0.5 + 0.5
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     for state in states:
         for i in range(n_viz):
             ax[i, 0].imshow(torch.clamp(exp_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy())
             ax[i, 1].imshow(torch.clamp(pred_exp_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy())
-            ax[i, 2].imshow(torch.clamp(sim_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy()[..., state])
-            ax[i, 3].imshow(torch.clamp(pred_sim_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy()[..., state])
+            ax[i, 2].imshow(torch.clamp(sim_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy())#[..., state])
+            ax[i, 3].imshow(torch.clamp(pred_sim_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy())#[..., state])
             ax[i, 0].axis('off')
             ax[i, 1].axis('off')
             ax[i, 2].axis('off')

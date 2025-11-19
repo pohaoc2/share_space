@@ -258,7 +258,7 @@ class SimExpPairedDataset(Dataset):
         exp_tensor = self.exp_transform(exp_img)  # (3, H, W), normalized to [-1, 1]
         
         # Load simulation count (grayscale, continuous [0, 1])
-        sim_count = Image.open(sim_count_path).convert('L')
+        sim_count = Image.open(sim_count_path).convert('RGB')
         sim_count_tensor = self.count_transform(sim_count)  # (1, H, W), normalized to [-1, 1]
         
         # Load simulation state (RGB, categorical)
@@ -284,7 +284,7 @@ class SimExpPairedDataset(Dataset):
         
         return {
             'experimental': exp_tensor,      # (3, H, W), RGB normalized to [-1, 1]
-            'simulation': sim_tensor[:1],        # (8, H, W), count + 7 one-hot state channels
+            'simulation': sim_tensor[:3],        # (8, H, W), count + 7 one-hot state channels
             'exp_path': str(exp_path),
             'sim_state_path': str(sim_state_path),
             'sim_count_path': str(sim_count_path)
