@@ -7,7 +7,7 @@ model:
   embed_dim: 64
   depth: 2
   num_heads: 2
-  decoder_type: conv  # Options: 'conv', 'transformer'
+  decoder_type: transformer  # Options: 'conv', 'transformer'
 
 diffusion:
   unet_config: {
@@ -26,7 +26,7 @@ diffusion:
 # Training Parameters
 training:
   stage_1:
-    eval_only: true
+    eval_only: false
     epochs: 10
     learning_rate: 0.0001
     weight_decay: 0.05
@@ -36,7 +36,7 @@ training:
     load_path: ./checkpoints/stage_1/best_model.pth
     eval_every: 2
   stage_2:
-    eval_only: true
+    eval_only: false
     epochs: 10
     learning_rate: 0.0001
     weight_decay: 0.05
@@ -71,8 +71,6 @@ visualization:
   style_transfer:
     save_dir: ./visualization/
     n_viz: 3
-    state: 0
   reconstructed_images:
     save_dir: ./visualization/
     n_viz: 3
-    state: 0
