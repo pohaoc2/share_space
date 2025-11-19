@@ -82,7 +82,7 @@ class TeacherStudentTrainer:
         
         sim_images = batch['simulation'].to(self.device).float()
         exp_images = batch['experimental'].to(self.device).float()
-        
+        sim_images = copy.deepcopy(exp_images)
         # Store accumulated losses
         accumulated_losses = {}
         

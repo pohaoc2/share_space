@@ -70,7 +70,6 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
             train_losses = trainer.train_epoch(
                 train_loader, optimizer, loss_fn, mask_ratio=stage_config['mask_ratio']
             )
-            print(f"Train losses: {train_losses}")
             
             # Store losses for plotting
             for key in train_losses.keys():
@@ -101,7 +100,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
         print(f"Training {stage_name} complete!")
     
     # Final evaluation
-    if run_final_eval:
+    if stage_config['run_final_eval']:
         print(f"\nFinal evaluation for {stage_name}...")
         final_metrics = evaluator.evaluate_model(model, val_loader, stage_name=stage_name)
         print(f"Final metrics: {final_metrics}")
@@ -118,7 +117,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
                 loss_history[key] = [value.detach().cpu().numpy() for value in values]
             else:
                 loss_history[key] = values
-        if not stage_config['eval_only']:
+        if not stage_config['eval_only'] and len(loss_history) > 0:
             plt.figure(figsize=(8, 2))
             epochs = range(1, len(loss_history[list(loss_history.keys())[0]]) + 1)
             for key in loss_history.keys():
@@ -354,7 +353,7 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
     for state in states:
         for i in range(n_viz):
             ax[i, 0].imshow(torch.clamp(exp_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy())
-            ax[i, 1].imshow(torch.clamp(pred_exp_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy()[..., :3])
+            ax[i, 1].imshow(torch.clamp(pred_exp_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy())
             ax[i, 2].imshow(torch.clamp(sim_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy()[..., state])
             ax[i, 3].imshow(torch.clamp(pred_sim_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy()[..., state])
             ax[i, 0].axis('off')

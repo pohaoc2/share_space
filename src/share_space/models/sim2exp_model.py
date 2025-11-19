@@ -15,11 +15,17 @@ class Sim2ExpModel(nn.Module):
         # Use a fixed internal channel representation (e.g., 8 channels)
         self.sim_chans = encoder_config['sim_chans']
         self.exp_chans = encoder_config['exp_chans']
-        internal_chans = max(self.sim_chans, self.exp_chans)
+        internal_chans = min(self.sim_chans, self.exp_chans)
         
         # Projection layers to convert inputs to internal representation
-        self.proj_sim_to_internal = nn.Conv2d(self.sim_chans, internal_chans, kernel_size=1)
-        self.proj_exp_to_internal = nn.Conv2d(self.exp_chans, internal_chans, kernel_size=1)
+        if internal_chans == self.sim_chans:
+            self.proj_sim_to_internal = nn.Identity()
+        else:
+            self.proj_sim_to_internal = nn.Conv2d(self.sim_chans, internal_chans, kernel_size=1)
+        if internal_chans == self.exp_chans:
+            self.proj_exp_to_internal = nn.Identity()
+        else:
+            self.proj_exp_to_internal = nn.Conv2d(self.exp_chans, internal_chans, kernel_size=1)
         
         # Single encoder for internal representation
         vit_allowed_keys = {
@@ -69,8 +75,14 @@ class Sim2ExpModel(nn.Module):
             raise ValueError(f"Unknown decoder type: {decoder_type}")
         
         # Projection layers to convert back to original channels
-        self.proj_internal_to_sim = nn.Conv2d(internal_chans, self.sim_chans, kernel_size=1)
-        self.proj_internal_to_exp = nn.Conv2d(internal_chans, self.exp_chans, kernel_size=1)
+        if internal_chans == self.sim_chans:
+            self.proj_internal_to_sim = nn.Identity()
+        else:
+            self.proj_internal_to_sim = nn.Conv2d(internal_chans, self.sim_chans, kernel_size=1)
+        if internal_chans == self.exp_chans:
+            self.proj_internal_to_exp = nn.Identity()
+        else:
+            self.proj_internal_to_exp = nn.Conv2d(internal_chans, self.exp_chans, kernel_size=1)
     
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         in_chans = x.shape[1]
