@@ -104,11 +104,11 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
     # Final evaluation
     if run_final_eval:
         print(f"\nFinal evaluation for {stage_name}...")
-        final_metrics = evaluator.evaluate_model(model, val_loader)
+        final_metrics = evaluator.evaluate_model(model, val_loader, stage_name=stage_name)
         print(f"Final metrics: {final_metrics}")
         
         # Save final metrics
-        metrics_path = Path(stage_config['save_dir']) / 'final_metrics.json'
+        metrics_path = Path(stage_config['save_dir']) / f'final_metrics_{stage_name}.json'
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
         with open(metrics_path, 'w') as f:
             json.dump(final_metrics, f, indent=2)
@@ -128,7 +128,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
             plt.legend()
             plt.grid(True, alpha=0.3)
             plt.tight_layout()
-            plt.savefig(Path(stage_config['save_dir']) / 'loss_history.png', dpi=300, bbox_inches='tight')
+            plt.savefig(Path(stage_config['save_dir']) / f'loss_history_{stage_name}.png', dpi=300, bbox_inches='tight')
     
     return best_psnr
 
@@ -311,7 +311,7 @@ def main(config_path='config.yaml'):
         loss_history=loss_history,
         best_psnr=best_psnr,
         device=device,
-        run_final_eval=False  # Set to True to run final evaluation and visualization
+        run_final_eval=True  # Set to True to run final evaluation and visualization
     )
     style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
     best_psnr = float('-inf')
@@ -329,7 +329,7 @@ def main(config_path='config.yaml'):
         loss_history=loss_history,
         best_psnr=best_psnr,
         device=device,
-        run_final_eval=False  # Set to True to run final evaluation and visualization
+        run_final_eval=True  # Set to True to run final evaluation and visualization
     )
     visualize_reconstructed_images(model,
         val_loader,
