@@ -15,7 +15,7 @@ from share_space.models.decoders import ConvDecoder, TransformerDecoder
 import copy
 from share_space.diffusion import DiffusionModel
 from share_space.models.adain import AdaINFusion
-
+import os
 state_names = {
     0: 'Cell Count',
     1: 'OTHER',
@@ -129,7 +129,6 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
             plt.grid(True, alpha=0.3)
             plt.tight_layout()
             plt.savefig(Path(stage_config['save_dir']) / 'loss_history.png', dpi=300, bbox_inches='tight')
-            plt.show()
     
     return best_psnr
 
@@ -283,7 +282,6 @@ def main(config_path='config.yaml'):
             ax[1, i].imshow(first_batch[1][i].permute(1, 2, 0).cpu().numpy())
             ax[0, i].axis('off')
             ax[1, i].axis('off')
-        plt.show()
         plt.tight_layout()
     
     
@@ -367,9 +365,53 @@ def main(config_path='config.yaml'):
         plt.tight_layout()
         plt.subplots_adjust(hspace=0.01, wspace=0.05)
         plt.savefig('reconstructed_images.png', dpi=300, bbox_inches='tight', transparent=True)
-        plt.show()
-    visualize_style_transfer(style_model, val_loader, device, n_viz=3, state=0)
-def visualize_style_transfer(style_model, val_loader, device, n_viz=5, state=0):
+        #plt.show()
+    visualize_reconstructed_images(model,
+        val_loader,
+        device,
+        save_dir=config['visualization']['reconstructed_images']['save_dir'],
+        n_viz=config['visualization']['reconstructed_images']['n_viz'],
+        state=config['visualization']['reconstructed_images']['state']
+    )
+
+    visualize_style_transfer(style_model,
+        val_loader,
+        device,
+        save_dir=config['visualization']['style_transfer']['save_dir'],
+        n_viz=config['visualization']['style_transfer']['n_viz'],
+        state=config['visualization']['style_transfer']['state']
+    )
+
+def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5, state=0):
+    print(f"Visualizing reconstructed images...")
+    model.eval()
+    first_batch = next(iter(val_loader))
+    fig, ax = plt.subplots(n_viz, 4, figsize=(3 * 4, 3 * n_viz))
+    for i in range(n_viz):
+        exp_img = first_batch['experimental'][i].unsqueeze(0)
+        sim_img = first_batch['simulation'][i].unsqueeze(0)
+        pred_sim_imgs, _, _ = model(sim_img.to(device))
+        pred_exp_imgs, _, _ = model(exp_img.to(device))
+        ax[i, 0].imshow(exp_img[0].permute(1, 2, 0).cpu().detach().numpy())
+        ax[i, 1].imshow(pred_exp_imgs[0].permute(1, 2, 0).cpu().detach().numpy()[..., :3])
+        ax[i, 2].imshow(sim_img[0].permute(1, 2, 0).cpu().detach().numpy()[..., state])
+        ax[i, 3].imshow(pred_sim_imgs[0].permute(1, 2, 0).cpu().detach().numpy()[..., state])
+        ax[i, 0].axis('off')
+        ax[i, 1].axis('off')
+        ax[i, 2].axis('off')
+        ax[i, 3].axis('off')
+        if i == 0:
+            ax[i, 0].set_title('Exp (Input)', loc='center')
+            ax[i, 1].set_title('Exp Reconstructed (Output)', loc='center')
+            ax[i, 2].set_title('Sim (Input)', loc='center')
+            ax[i, 3].set_title(f'Sim Reconstructed (Output) {state_names[state]}', loc='center')
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.01, wspace=0.05)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    plt.savefig(Path(save_dir) / 'reconstructed_images.png', dpi=300, bbox_inches='tight', transparent=True)
+
+def visualize_style_transfer(style_model, val_loader, device, save_dir, n_viz=5, state=0):
     print(f"Visualizing style transfer...")
     style_model.eval()
     first_batch = next(iter(val_loader))
@@ -377,8 +419,6 @@ def visualize_style_transfer(style_model, val_loader, device, n_viz=5, state=0):
     for i in range(n_viz):
         exp_img = first_batch['experimental'][i].unsqueeze(0) # style
         sim_img = first_batch['simulation'][i].unsqueeze(0) # content
-        print(f"Sim image shape: {sim_img.shape}")
-        print(f"Exp image shape: {exp_img.shape}")
         pred_imgs = style_model(sim_img.to(device), exp_img.to(device))[0].permute(1, 2, 0).cpu().detach().numpy()
 
         ax[i, 0].imshow(exp_img[0].permute(1, 2, 0).cpu().detach().numpy())
@@ -391,11 +431,13 @@ def visualize_style_transfer(style_model, val_loader, device, n_viz=5, state=0):
             ax[i, 0].set_title('Exp (Style)', loc='center')
             ax[i, 1].set_title(f'Sim (Content) {state_names[state]}', loc='center')
             ax[i, 2].set_title('Style Transferred\n(Output)', loc='center')
-    plt.show()
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.01, wspace=0.05)
-    plt.savefig('style_transfer.png', dpi=300, bbox_inches='tight', transparent=True)
-    plt.show()
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    plt.savefig(Path(save_dir) / 'style_transfer.png', dpi=300, bbox_inches='tight', transparent=True)
+
+
 if __name__ == '__main__':
     import sys
     
