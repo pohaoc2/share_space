@@ -276,15 +276,15 @@ def main(config_path='config.yaml'):
         first_batch = next(iter(val_loader))
         fig, ax = plt.subplots(2, 5, figsize=(12, 6))
         for i in range(5):
-            #ax[0, i].imshow(first_batch['simulation'][i].permute(1, 2, 0).cpu().numpy())
-            #ax[1, i].imshow(first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy())
-            ax[0, i].imshow(first_batch[0][i].permute(1, 2, 0).cpu().numpy())
-            ax[1, i].imshow(first_batch[1][i].permute(1, 2, 0).cpu().numpy())
+            ax[0, i].imshow(first_batch['simulation'][i].permute(1, 2, 0).cpu().numpy())
+            ax[1, i].imshow(first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy())
+            #ax[0, i].imshow(first_batch[0][i].permute(1, 2, 0).cpu().numpy())
+            #ax[1, i].imshow(first_batch[1][i].permute(1, 2, 0).cpu().numpy())
             ax[0, i].axis('off')
             ax[1, i].axis('off')
         plt.tight_layout()
-    
-    
+        plt.show()
+
     # Train stage 1
     model, trainer, optimizer, scheduler, loss_fn, evaluator = _get_stage_1_model(config, device, "stage_1")
     print("Starting training...")
