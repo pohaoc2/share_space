@@ -399,8 +399,8 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
     )
     style_model = StyleTransferModel(
         feature_extractor=feature_extractor,
-        #decoder=feature_extractor.decoder,
-        decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
+        decoder=feature_extractor.decoder,
+        #decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         #adain=AdaINFusion()
         adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
         #adain=HistoAdaINHybrid(patch_size=config['model']['patch_size'])
@@ -421,7 +421,7 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         diffusion_model=diffusion_model,
     )
     optimizer = optim.AdamW(
-        list(style_model.decoder.parameters()) + (list(diffusion_model.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
+        list(style_model.decoder.parameters()) + (list(diffusion_model.parameters()) + list(style_model.adain.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
         lr=config['training'][stage_name]['learning_rate'],
         weight_decay=config['training'][stage_name]['weight_decay']
     )
@@ -479,21 +479,22 @@ def main(config_path='config.yaml'):
     best_psnr = float('-inf')
         
     # Train stage 1
-    best_psnr, loss_history = train_stage(
-        model=model,
-        trainer=trainer,
-        optimizer=optimizer,
-        scheduler=scheduler,
-        loss_fn=loss_fn,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        evaluator=evaluator,
-        stage_config=config['training']['stage_1'],
-        stage_name='stage_1',
-        best_psnr=best_psnr,
-        device=device,
-        run_final_eval=True  # Set to True to run final evaluation and visualization
-    )
+    if not config['training']['stage_1']['eval_only']:
+        best_psnr, loss_history = train_stage(
+            model=model,
+            trainer=trainer,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            loss_fn=loss_fn,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            evaluator=evaluator,
+            stage_config=config['training']['stage_1'],
+            stage_name='stage_1',
+            best_psnr=best_psnr,
+            device=device,
+            run_final_eval=True  # Set to True to run final evaluation and visualization
+        )
 
     # Compute feature similarity metrics
     #metrics = compute_feature_similarity_metrics(model, val_loader, device)
@@ -531,7 +532,7 @@ def main(config_path='config.yaml'):
             ax[i, 1].axis('off')
         plt.tight_layout()
         plt.show()
-    if 1:
+    if 0:
         visualize_reconstructed_images(model,
             val_loader,
             device,

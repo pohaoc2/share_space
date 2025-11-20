@@ -91,7 +91,6 @@ class StyleTransferTrainer:
         Returns:
             Dictionary containing all intermediate outputs
         """
-        # Ensure float32
         content_images = content_images.float()
         style_images = style_images.float()
         shuffled_style_images = shuffled_style_images.float()
@@ -106,7 +105,6 @@ class StyleTransferTrainer:
         fused_features_patches = self.adain(content_features_patches, shuffled_style_features_patches)
         fused_features_cls = self.adain(content_features_cls, style_features_cls)
         # Step 3: Decode to generate output
-
         #output_images = self.decoder(0.5*content_features_patches+style_features_patches)#fused_features_patches)
         output_images = self.decoder(fused_features_patches)
         

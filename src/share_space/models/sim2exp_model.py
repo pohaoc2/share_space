@@ -118,11 +118,16 @@ class StyleTransferModel(nn.Module):
     def __init__(self, feature_extractor: nn.Module, decoder: nn.Module, adain: AdaINFusion):
         super().__init__()
         self.encoder = feature_extractor # frozen
-        # use encoder.decoder's weights
-        self.decoder = decoder # trainable
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+        self.decoder = decoder  # will be frozen
         self.decoder.load_state_dict(self.encoder.decoder.state_dict())
+        for param in self.decoder.parameters():
+            param.requires_grad = False
         self.adain = adain
-
+        print(f"Adain is trainable: {any(p.requires_grad for p in self.adain.parameters())}")
+        print(f"Decoder is trainable: {any(p.requires_grad for p in self.decoder.parameters())}")
+        print(f"Encoder is trainable: {any(p.requires_grad for p in self.encoder.parameters())}")
 
     def forward(self, x_content: torch.Tensor, x_style: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
