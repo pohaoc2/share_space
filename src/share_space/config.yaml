@@ -57,7 +57,8 @@ loss:
   content_weight: 0.0
   style_weight: 0 #5.0
   element_weight: 0.0
-  image_weight: 10.0
+  image_weight: 0.0
+  fused_patches_weight: 1.0
 # Data Configuration
 data:
   exp_dir: ../../data/exp

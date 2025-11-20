@@ -104,6 +104,7 @@ class StyleTransferTrainer:
         # Step 2: Fuse features using AdaIN (Equation 5)
         fused_features_patches = self.adain(content_features_patches, shuffled_style_features_patches)
         fused_features_cls = self.adain(content_features_cls, style_features_cls)
+        fused_features_cls = fused_features_cls.view(fused_features_cls.shape[0], -1)
         # Step 3: Decode to generate output
         #output_images = self.decoder(0.5*content_features_patches+style_features_patches)#fused_features_patches)
         output_images = self.decoder(fused_features_patches)
@@ -140,6 +141,8 @@ class StyleTransferTrainer:
         return {
             'content_features_cls': content_features_cls,
             'style_features_cls': style_features_cls,
+            'style_features_patches': style_features_patches,
+            'fused_features_patches': fused_features_patches,
             'fused_features_cls': fused_features_cls,
             'output_images': output_images,
             'output_features_cls': output_features_cls,
@@ -180,8 +183,10 @@ class StyleTransferTrainer:
         losses = loss_fn(
             content_latent=outputs['content_features_cls'],
             style_latent=outputs['style_features_cls'],
+            style_features_patches=outputs['style_features_patches'],
             output_latent=outputs['output_features_cls'],
             adain_features=outputs['fused_features_cls'],
+            fused_features_patches=outputs['fused_features_patches'],
             output_images=outputs['output_images'],
             target_images=style_images,
             noise_pred=outputs['noise_pred'],

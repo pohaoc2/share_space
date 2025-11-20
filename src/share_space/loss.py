@@ -184,7 +184,8 @@ class StyleTransferLoss(nn.Module):
                  style_weight: float = 1.0,
                  element_weight: float = 1.0,
                  diffusion_weight: float = 1.0,
-                 image_weight: float = 1.0):
+                 image_weight: float = 1.0,
+                 fused_patches_weight: float = 1.0):
         super().__init__()
         self.use_diffusion = use_diffusion
         self.content_weight = content_weight
@@ -192,7 +193,7 @@ class StyleTransferLoss(nn.Module):
         self.element_weight = element_weight
         self.diffusion_weight = diffusion_weight
         self.image_weight = image_weight
-
+        self.fused_patches_weight = fused_patches_weight
 
     def content_loss(self, content_latent: torch.Tensor, output_latent: torch.Tensor) -> torch.Tensor:
         """
@@ -232,11 +233,20 @@ class StyleTransferLoss(nn.Module):
         """
         return F.mse_loss(output_images, target)
     
+    def fused_patches_loss(self, fused_features_patches: torch.Tensor, style_features_patches: torch.Tensor) -> torch.Tensor:
+        """
+        Fused features patches loss (Eq. 11): L_FusedPatches = ||A(X_s, X_i) - X_s||²_2
+        Measures fine-grained differences at element level
+        """
+        return F.mse_loss(fused_features_patches, style_features_patches)
+    
     def forward(self, 
                 content_latent: torch.Tensor,
                 style_latent: torch.Tensor,
+                style_features_patches: torch.Tensor,
                 output_latent: torch.Tensor,
                 adain_features: torch.Tensor,
+                fused_features_patches: torch.Tensor,
                 output_images: torch.Tensor,
                 target_images: torch.Tensor,
                 noise_pred: Optional[torch.Tensor] = None,
@@ -257,6 +267,9 @@ class StyleTransferLoss(nn.Module):
         
         # Element loss (Eq. 9)
         losses['element'] = self.element_weight * self.element_loss(adain_features, output_latent)
+        
+        # Fused features patches loss (Eq. 11)
+        losses['fused_patches'] = self.fused_patches_weight * self.fused_patches_loss(fused_features_patches, style_features_patches)
         
         # Diffusion loss (Eq. 8) - optional
         if self.use_diffusion and noise_pred is not None and noise_target is not None:

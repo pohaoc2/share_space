@@ -395,12 +395,13 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         style_weight=config['loss']['style_weight'],
         element_weight=config['loss']['element_weight'],
         diffusion_weight=config['loss']['diffusion_weight'],
-        image_weight=config['loss']['image_weight']
+        image_weight=config['loss']['image_weight'],
+        fused_patches_weight=config['loss']['fused_patches_weight']
     )
     style_model = StyleTransferModel(
         feature_extractor=feature_extractor,
-        decoder=feature_extractor.decoder,
-        #decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
+        #decoder=feature_extractor.decoder,
+        decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         #adain=AdaINFusion()
         adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
         #adain=HistoAdaINHybrid(patch_size=config['model']['patch_size'])
