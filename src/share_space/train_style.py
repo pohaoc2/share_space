@@ -14,6 +14,7 @@ import copy
 from share_space.loss import StyleTransferLoss
 from share_space.models.sim2exp_model import StyleTransferModel
 import math
+import matplotlib.pyplot as plt
 
 class StyleTransferTrainer:
     """
@@ -78,7 +79,8 @@ class StyleTransferTrainer:
     
     def forward_pass(self, 
                      content_images: torch.Tensor,
-                     style_images: torch.Tensor) -> Dict[str, torch.Tensor]:
+                     style_images: torch.Tensor,
+                     shuffled_style_images: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
         Forward pass through the style transfer pipeline
         
@@ -92,17 +94,19 @@ class StyleTransferTrainer:
         # Ensure float32
         content_images = content_images.float()
         style_images = style_images.float()
-        
+        shuffled_style_images = shuffled_style_images.float()
         # Step 1: Extract features (frozen)
         with torch.no_grad():
             _, content_features_cls, content_features_patches = self.extract_features(content_images)
             _, style_features_cls, style_features_patches = self.extract_features(style_images)
-        
+            _, shuffled_style_features_cls, shuffled_style_features_patches = self.extract_features(shuffled_style_images)
+            _, _, mix_feature_patches = self.extract_features(0.1*content_images+style_images)
+
         # Step 2: Fuse features using AdaIN (Equation 5)
         fused_features_patches = self.adain(content_features_patches, style_features_patches)
         fused_features_cls = self.adain(content_features_cls, style_features_cls)
         # Step 3: Decode to generate output
-        output_images = self.decoder(fused_features_patches)
+        output_images = self.decoder(0.5*content_features_patches+style_features_patches)#fused_features_patches)
         
         # Step 4: Extract features from output for loss computation
         with torch.no_grad():
@@ -165,11 +169,12 @@ class StyleTransferTrainer:
         # Get images
         content_images = batch['simulation'].to(self.device).float()
         style_images = batch['experimental'].to(self.device).float()
+        shuffled_style_images = batch['shuffled_exp'].to(self.device).float()
         #content_images = batch[0].to(self.device).float()
         #style_images = batch[1].to(self.device).float()
         
         # Forward pass
-        outputs = self.forward_pass(content_images, style_images)
+        outputs = self.forward_pass(content_images, style_images, shuffled_style_images)
         
         # Compute losses
         losses = loss_fn(
@@ -235,7 +240,8 @@ class StyleTransferTrainer:
     @torch.no_grad()
     def generate(self,
                  content_images: torch.Tensor,
-                 style_images: torch.Tensor) -> torch.Tensor:
+                 style_images: torch.Tensor,
+                 shuffled_style_images: torch.Tensor) -> torch.Tensor:
         """
         Generate style-transferred images (inference mode)
         
@@ -250,7 +256,7 @@ class StyleTransferTrainer:
         if self.diffusion is not None:
             self.diffusion.eval()
         
-        outputs = self.forward_pass(content_images, style_images)
+        outputs = self.forward_pass(content_images, style_images, shuffled_style_images)
         return outputs['output_images']
     
     def save_checkpoint(self, path: str, epoch: int, optimizer: torch.optim.Optimizer):

@@ -252,7 +252,10 @@ class SimExpPairedDataset(Dataset):
     
     def __getitem__(self, idx: int) -> dict:
         exp_path, sim_state_path, sim_count_path = self.pairs[idx]
-        
+        shuffled_idx = torch.randperm(len(self.pairs))[idx]
+        shuffled_exp_path, shuffled_sim_state_path, shuffled_sim_count_path = self.pairs[shuffled_idx]
+        shuffled_exp_img = Image.open(shuffled_exp_path).convert('RGB')
+        shuffled_exp_tensor = self.exp_transform(shuffled_exp_img)  # (3, H, W), normalized to [-1, 1]
         # Load experimental image (RGB)
         exp_img = Image.open(exp_path).convert('RGB')
         exp_tensor = self.exp_transform(exp_img)  # (3, H, W), normalized to [-1, 1]
@@ -285,6 +288,7 @@ class SimExpPairedDataset(Dataset):
         return {
             'experimental': exp_tensor,      # (3, H, W), RGB normalized to [-1, 1]
             'simulation': sim_tensor[:3],        # (8, H, W), count + 7 one-hot state channels
+            'shuffled_exp': shuffled_exp_tensor,
             'exp_path': str(exp_path),
             'sim_state_path': str(sim_state_path),
             'sim_count_path': str(sim_count_path)

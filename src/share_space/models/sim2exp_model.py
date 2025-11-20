@@ -5,7 +5,7 @@ from typing import Tuple, Optional
 from share_space.models.vit import VisionTransformer
 from share_space.models.decoders import ConvDecoder, TransformerDecoder
 from share_space.models.adain import AdaINFusion
-
+import torch.nn.functional as F
 
 class Sim2ExpModel(nn.Module):
     """Complete model with channel projection layers"""
@@ -132,8 +132,9 @@ class StyleTransferModel(nn.Module):
         """
         _, content_features_cls, content_features_patches = self.encoder(x_content)
         _, style_features_cls, style_features_patches = self.encoder(x_style)
-        fused_features_patches = self.adain(content_features_patches, style_features_patches)
-        fused_features_cls = self.adain(content_features_cls, style_features_cls)
-        reconstructed = self.decoder(fused_features_patches)
+        _, _, mixed_features_patches = self.encoder(0.5*x_content+x_style)
+        #fused_features_patches = self.adain(content_features_patches, style_features_patches)
+        #reconstructed = self.decoder(fused_features_patches)
+        reconstructed = self.decoder(0.5*content_features_patches+style_features_patches)
         return reconstructed
         
