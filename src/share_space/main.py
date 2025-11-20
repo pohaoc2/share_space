@@ -102,7 +102,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
             scheduler.step()
         
         print(f"Training {stage_name} complete!")
-    
+        asd()
     # Final evaluation
     if stage_config['run_final_eval']:
         print(f"\nFinal evaluation for {stage_name}...")
@@ -399,8 +399,8 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
     )
     style_model = StyleTransferModel(
         feature_extractor=feature_extractor,
-        decoder=feature_extractor.decoder,
-        #decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
+        #decoder=feature_extractor.decoder,
+        decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         adain=AdaINFusion()
     )
     if config['training'][stage_name]['use_diffusion']:
@@ -529,7 +529,7 @@ def main(config_path='config.yaml'):
             ax[i, 1].axis('off')
         plt.tight_layout()
         plt.show()
-    if 0:
+    if 1:
         visualize_reconstructed_images(model,
             val_loader,
             device,

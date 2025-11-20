@@ -118,7 +118,9 @@ class StyleTransferModel(nn.Module):
     def __init__(self, feature_extractor: nn.Module, decoder: nn.Module, adain: AdaINFusion):
         super().__init__()
         self.encoder = feature_extractor # frozen
+        # use encoder.decoder's weights
         self.decoder = decoder # trainable
+        self.decoder.load_state_dict(self.encoder.decoder.state_dict())
         self.adain = adain
 
 
@@ -132,9 +134,10 @@ class StyleTransferModel(nn.Module):
         """
         _, content_features_cls, content_features_patches = self.encoder(x_content)
         _, style_features_cls, style_features_patches = self.encoder(x_style)
-        _, _, mixed_features_patches = self.encoder(0.5*x_content+x_style)
-        #fused_features_patches = self.adain(content_features_patches, style_features_patches)
-        #reconstructed = self.decoder(fused_features_patches)
-        reconstructed = self.decoder(0.5*content_features_patches+style_features_patches)
+        
+        #_, _, mixed_features_patches = self.encoder(0.5*x_content+x_style)
+        fused_features_patches = self.adain(content_features_patches, style_features_patches)
+        reconstructed = self.decoder(fused_features_patches)
+        #reconstructed = self.decoder(0.5*content_features_patches+style_features_patches)
         return reconstructed
         
