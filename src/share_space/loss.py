@@ -183,14 +183,17 @@ class StyleTransferLoss(nn.Module):
                  content_weight: float = 1.0,
                  style_weight: float = 1.0,
                  element_weight: float = 1.0,
-                 diffusion_weight: float = 1.0):
+                 diffusion_weight: float = 1.0,
+                 image_weight: float = 1.0):
         super().__init__()
         self.use_diffusion = use_diffusion
         self.content_weight = content_weight
         self.style_weight = style_weight
         self.element_weight = element_weight
         self.diffusion_weight = diffusion_weight
-    
+        self.image_weight = image_weight
+
+
     def content_loss(self, content_latent: torch.Tensor, output_latent: torch.Tensor) -> torch.Tensor:
         """
         Content Loss (Equation 6): L_ImageLatent = ||VDVAE(X_i) - VDVAE(X_output)||²
@@ -221,11 +224,21 @@ class StyleTransferLoss(nn.Module):
         """
         return F.mse_loss(adain_features, output_latent)
     
+
+    def image_loss(self, output_images: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Image Loss (Eq. 10): L_Image = ||X_output - X_target||²_2
+        Measures image-level similarity
+        """
+        return F.mse_loss(output_images, target)
+    
     def forward(self, 
                 content_latent: torch.Tensor,
                 style_latent: torch.Tensor,
                 output_latent: torch.Tensor,
                 adain_features: torch.Tensor,
+                output_images: torch.Tensor,
+                target_images: torch.Tensor,
                 noise_pred: Optional[torch.Tensor] = None,
                 noise_target: Optional[torch.Tensor] = None) -> Dict[str, torch.Tensor]:
         """
@@ -248,6 +261,9 @@ class StyleTransferLoss(nn.Module):
         # Diffusion loss (Eq. 8) - optional
         if self.use_diffusion and noise_pred is not None and noise_target is not None:
             losses['diffusion'] = self.diffusion_weight * self.diffusion_loss(noise_pred, noise_target)
+        
+        # Image loss (Eq. 10)
+        losses['image'] = self.image_weight * self.image_loss(output_images, target_images)
         
         # Total loss
         losses['total'] = sum(losses.values())

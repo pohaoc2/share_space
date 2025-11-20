@@ -394,7 +394,8 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         content_weight=config['loss']['content_weight'],
         style_weight=config['loss']['style_weight'],
         element_weight=config['loss']['element_weight'],
-        diffusion_weight=config['loss']['diffusion_weight']
+        diffusion_weight=config['loss']['diffusion_weight'],
+        image_weight=config['loss']['image_weight']
     )
     style_model = StyleTransferModel(
         feature_extractor=feature_extractor,

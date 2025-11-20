@@ -26,7 +26,7 @@ diffusion:
 # Training Parameters
 training:
   stage_1:
-    eval_only: true
+    eval_only: True
     epochs: 5
     learning_rate: 0.0001
     weight_decay: 0.05
@@ -38,7 +38,7 @@ training:
     run_final_eval: false
   stage_2:
     eval_only: false
-    epochs: 0
+    epochs: 1
     learning_rate: 0.0001
     weight_decay: 0.05
     teacher_momentum: 0.996
@@ -57,7 +57,7 @@ loss:
   content_weight: 1.0
   style_weight: 1 #5.0
   element_weight: 0.0
-
+  image_weight: 1.0
 # Data Configuration
 data:
   exp_dir: ../../data/exp
