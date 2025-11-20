@@ -102,7 +102,6 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
             scheduler.step()
         
         print(f"Training {stage_name} complete!")
-        asd()
     # Final evaluation
     if stage_config['run_final_eval']:
         print(f"\nFinal evaluation for {stage_name}...")
@@ -587,7 +586,7 @@ def visualize_style_transfer(style_model, val_loader, device, save_dir, n_viz=5,
     print(f"Visualizing style transfer...")
     style_model.eval()
     first_batch = next(iter(val_loader))
-    fig, ax = plt.subplots(n_viz, 5, figsize=(3 * 4, 3 * n_viz))
+    fig, ax = plt.subplots(n_viz, 5, figsize=(3 * 5, 3 * n_viz))
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     for state in states:
