@@ -14,7 +14,8 @@ from share_space.train_style import StyleTransferTrainer
 from share_space.models.decoders import ConvDecoder, TransformerDecoder
 import copy
 from share_space.diffusion import DiffusionModel
-from share_space.models.adain import AdaINFusion, HistoAdaIN
+from share_space.models.adain import AdaINFusion#, HistoAdaIN
+from share_space.adain_histo import HistoAdaINSpatialAware, HistoAdaIN, HistoAdaINHybrid
 import os
 import torch.nn.functional as F
 import numpy as np
@@ -400,7 +401,9 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         feature_extractor=feature_extractor,
         #decoder=feature_extractor.decoder,
         decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
-        adain=AdaINFusion()
+        #adain=AdaINFusion()
+        adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
+        #adain=HistoAdaINHybrid(patch_size=config['model']['patch_size'])
     )
     if config['training'][stage_name]['use_diffusion']:
         diffusion_model = DiffusionModel(
