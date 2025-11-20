@@ -78,56 +78,136 @@ class StyleTransferTrainer:
         return features
     
     def forward_pass(self, 
-                     content_images: torch.Tensor,
-                     style_images: torch.Tensor,
-                     shuffled_style_images: torch.Tensor) -> Dict[str, torch.Tensor]:
+                    content_images: torch.Tensor,
+                    style_images: torch.Tensor,
+                    shuffled_style_images: torch.Tensor = None,
+                    use_all_pairs: bool = True) -> Dict[str, torch.Tensor]:
         """
         Forward pass through the style transfer pipeline
         
         Args:
             content_images: Content images (B, C, H, W)
             style_images: Style images (B, C, H, W)
+            shuffled_style_images: Only used for 1:1 mode
+            use_all_pairs: If True, generate all content-style pairs in batch
         
         Returns:
             Dictionary containing all intermediate outputs
         """
         content_images = content_images.float()
         style_images = style_images.float()
-        shuffled_style_images = shuffled_style_images.float()
+        
+        B = content_images.shape[0]
+        
         # Step 1: Extract features (frozen)
         with torch.no_grad():
             _, content_features_cls, content_features_patches = self.extract_features(content_images)
             _, style_features_cls, style_features_patches = self.extract_features(style_images)
-            _, shuffled_style_features_cls, shuffled_style_features_patches = self.extract_features(shuffled_style_images)
-            _, _, mix_feature_patches = self.extract_features(0.1*content_images+style_images)
-
-        # Step 2: Fuse features using AdaIN (Equation 5)
-        fused_features_patches = self.adain(content_features_patches, shuffled_style_features_patches)
-        fused_features_cls = self.adain(content_features_cls, style_features_cls)
-        fused_features_cls = fused_features_cls.view(fused_features_cls.shape[0], -1)
-        # Step 3: Decode to generate output
-        #output_images = self.decoder(0.5*content_features_patches+style_features_patches)#fused_features_patches)
-        output_images = self.decoder(fused_features_patches)
         
-        # Step 4: Extract features from output for loss computation
-        with torch.no_grad():
-            _, output_features_cls, output_features_patches = self.extract_features(output_images)
+        # Step 2: Fuse features using AdaIN
+        if not use_all_pairs:
+            # === 1:1 Pairing Mode ===
+            if shuffled_style_images is not None:
+                shuffled_style_images = shuffled_style_images.float()
+                with torch.no_grad():
+                    _, shuffled_style_features_cls, shuffled_style_features_patches = self.extract_features(shuffled_style_images)
+            else:
+                shuffled_style_features_cls = style_features_cls
+                shuffled_style_features_patches = style_features_patches
+            
+            fused_features_patches = self.adain(content_features_patches, shuffled_style_features_patches)
+            fused_features_cls = self.adain(content_features_cls, shuffled_style_features_cls)
+            fused_features_cls = fused_features_cls.view(fused_features_cls.shape[0], -1)
+            
+            # Decode
+            output_images = self.decoder(fused_features_patches)
+            
+            # Extract features from output
+            with torch.no_grad():
+                _, output_features_cls, output_features_patches = self.extract_features(output_images)
+            
+            # For 1:1, content features are already aligned
+            content_features_cls_expanded = content_features_cls
+            style_features_patches_target = shuffled_style_features_patches
+            style_features_cls_target = shuffled_style_features_cls
+            n_pairs = B
+            
+        else:
+            # === All-Pairs Mode ===
+            N, D = content_features_patches.shape[1], content_features_patches.shape[2]
+            
+            # Expand to (B, B, N, D) for all pairs
+            content_expanded = content_features_patches.unsqueeze(1).expand(-1, B, -1, -1)
+            style_expanded = style_features_patches.unsqueeze(0).expand(B, -1, -1, -1)
+            
+            # Flatten to (B*B, N, D)
+            content_flat = content_expanded.reshape(B * B, N, D)
+            style_flat = style_expanded.reshape(B * B, N, D)
+            
+            # Apply AdaIN to all pairs at once
+            fused_features_patches = self.adain(content_flat, style_flat)
+            
+            # Also fuse CLS tokens for all pairs
+            content_cls_expanded = content_features_cls.unsqueeze(1).expand(-1, B, -1)
+            style_cls_expanded = style_features_cls.unsqueeze(0).expand(B, -1, -1)
+            
+            content_cls_flat = content_cls_expanded.reshape(B * B, -1)
+            style_cls_flat = style_cls_expanded.reshape(B * B, -1)
+            fused_features_cls = self.adain(content_cls_flat, style_cls_flat)
+            fused_features_cls = fused_features_cls.view(fused_features_cls.shape[0], -1)
+            
+            # Remove self-pairs (diagonal: i==j)
+            mask = ~torch.eye(B, dtype=torch.bool, device=content_images.device).reshape(-1)
+            
+            fused_features_patches = fused_features_patches[mask]  # (B*(B-1), N, D)
+            fused_features_cls = fused_features_cls[mask]  # (B*(B-1), D_cls)
+            
+            # === Expand content features to match output shape ===
+            # For each pair (i,j), we need content[i]
+            content_indices = []
+            style_indices = []
+            for i in range(B):
+                for j in range(B):
+                    if i != j:
+                        content_indices.append(i)
+                        style_indices.append(j)
+            
+            # Expand content CLS to (B*(B-1), D)
+            content_features_cls_expanded = content_features_cls[content_indices]
+            
+            # Decode all pairs
+            output_images = self.decoder(fused_features_patches)
+            
+            # Extract features from outputs
+            with torch.no_grad():
+                _, output_features_cls, output_features_patches = self.extract_features(output_images)
+            
+            # Get style targets
+            style_features_patches_target = style_features_patches[style_indices]
+            style_features_cls_target = style_features_cls[style_indices]
+            n_pairs = B * (B - 1)
         
-        # Step 5: Optional diffusion refinement
+        # Step 3: Optional diffusion refinement
         noise_pred = None
         noise_target = None
         
         if self.use_diffusion and self.diffusion is not None:
-            # Add noise to fused features
+            batch_size_effective = fused_features_cls.shape[0]
             t = torch.randint(
                 0, 
                 self.diffusion.timesteps,
-                (content_images.shape[0],),
+                (batch_size_effective,),
                 device=self.device
             )
-            H = W = int(math.sqrt(fused_features_cls.shape[1]/self.diffusion.unet.in_channels))
-            fused_features_cls_image = fused_features_cls.view(fused_features_cls.shape[0], self.diffusion.unet.in_channels, H, W)
+            H = W = int(math.sqrt(fused_features_cls.shape[1] / self.diffusion.unet.in_channels))
+            fused_features_cls_image = fused_features_cls.view(
+                batch_size_effective, 
+                self.diffusion.unet.in_channels, 
+                H, 
+                W
+            )
             noise_target = torch.randn_like(fused_features_cls_image)
+            
             # Get alpha values
             alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
             sqrt_alpha_t = torch.sqrt(alpha_t)
@@ -138,47 +218,70 @@ class StyleTransferTrainer:
             
             # Predict noise
             noise_pred = self.diffusion.unet(noisy_features, t)
+        
         return {
-            'content_features_cls': content_features_cls,
-            'style_features_cls': style_features_cls,
-            'style_features_patches': style_features_patches,
+            'content_features_cls': content_features_cls_expanded,
+            'style_features_cls': style_features_cls_target,
+            'style_features_patches': style_features_patches_target,
             'fused_features_patches': fused_features_patches,
             'fused_features_cls': fused_features_cls,
             'output_images': output_images,
             'output_features_cls': output_features_cls,
+            'output_features_patches': output_features_patches,
             'noise_pred': noise_pred,
-            'noise_target': noise_target
+            'noise_target': noise_target,
+            'n_pairs': n_pairs
         }
-    
+
+
     def train_step(self, 
-                   batch: Dict[str, torch.Tensor],
-                   optimizer: torch.optim.Optimizer,
-                   loss_fn, mask_ratio: None) -> Dict[str, float]:
+                batch: Dict[str, torch.Tensor],
+                optimizer: torch.optim.Optimizer,
+                loss_fn,
+                mask_ratio: None = None,
+                use_all_pairs: bool = True) -> Dict[str, float]:
         """
         Single training step
         
         Args:
-            batch: Dictionary with 'content' and 'style' keys
+            batch: Dictionary with 'simulation' and 'experimental' keys
             optimizer: Optimizer for decoder (and optionally diffusion model)
             loss_fn: Loss function
             mask_ratio: Not used in style transfer
+            use_all_pairs: If True, use all-pairs training (recommended for small datasets)
+        
         Returns:
             Dictionary of loss values
         """
         self.decoder.train()
+        self.adain.train()  # Make sure AdaIN is in training mode
         if self.diffusion is not None:
             self.diffusion.train()
         
         # Get images
         content_images = batch['simulation'].to(self.device).float()
         style_images = batch['experimental'].to(self.device).float()
-        shuffled_style_images = batch['shuffled_exp'].to(self.device).float()
-        #content_images = batch[0].to(self.device).float()
-        #style_images = batch[1].to(self.device).float()
+        shuffled_style_images = batch.get('shuffled_exp', None)
+        if shuffled_style_images is not None:
+            shuffled_style_images = shuffled_style_images.to(self.device).float()
         
         # Forward pass
-        outputs = self.forward_pass(content_images, style_images, shuffled_style_images)
-        
+        outputs = self.forward_pass(
+            content_images, 
+            style_images, 
+            shuffled_style_images,
+            use_all_pairs=use_all_pairs
+        )
+        if use_all_pairs:
+            B = style_images.shape[0]
+            style_indices = []
+            for i in range(B):
+                for j in range(B):
+                    if i != j:
+                        style_indices.append(j)
+            target_images = style_images[style_indices]  # (B*(B-1), C, H, W)
+        else:
+            target_images = style_images  # (B, C, H, W)
         # Compute losses
         losses = loss_fn(
             content_latent=outputs['content_features_cls'],
@@ -188,7 +291,7 @@ class StyleTransferTrainer:
             adain_features=outputs['fused_features_cls'],
             fused_features_patches=outputs['fused_features_patches'],
             output_images=outputs['output_images'],
-            target_images=style_images,
+            target_images=target_images,
             noise_pred=outputs['noise_pred'],
             noise_target=outputs['noise_target']
         )
@@ -199,14 +302,18 @@ class StyleTransferTrainer:
         
         # Gradient clipping for stability
         torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.adain.parameters(), max_norm=1.0)
         if self.diffusion is not None:
             torch.nn.utils.clip_grad_norm_(self.diffusion.parameters(), max_norm=1.0)
         
         optimizer.step()
         
-        # Return scalar losses
-        return {k: v.item() for k, v in losses.items()}
-    
+        # Return scalar losses with pair count
+        loss_dict = {k: v.item() for k, v in losses.items()}
+        loss_dict['n_pairs'] = outputs['n_pairs']
+        
+        return loss_dict
+
     def train_epoch(self,
                     dataloader: DataLoader,
                     optimizer: torch.optim.Optimizer,

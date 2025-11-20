@@ -148,9 +148,6 @@ class MetricsEvaluator:
         for batch in tqdm(dataloader):
             sim_imgs = batch['simulation'].to(self.device)
             exp_imgs = batch['experimental'].to(self.device)
-            #sim_imgs = batch[0].to(self.device)
-            #exp_imgs = batch[1].to(self.device)
-            #exp_imgs = copy.deepcopy(sim_imgs)
             
             with torch.no_grad():
                 if stage_name == 'stage_2':
