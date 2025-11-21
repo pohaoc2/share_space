@@ -26,8 +26,8 @@ diffusion:
 # Training Parameters
 training:
   stage_1:
-    eval_only: true
-    epochs: 6
+    eval_only: false
+    epochs: 5
     learning_rate: 0.0001
     weight_decay: 0.05
     teacher_momentum: 0.996
@@ -37,8 +37,8 @@ training:
     eval_every: 2
     run_final_eval: false
   stage_2:
-    eval_only: true
-    epochs: 2
+    eval_only: false
+    epochs: 0
     learning_rate: 0.0001
     weight_decay: 0.05
     teacher_momentum: 0.996

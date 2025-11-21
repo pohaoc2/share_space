@@ -122,8 +122,8 @@ class StyleTransferModel(nn.Module):
             param.requires_grad = False
         self.decoder = decoder  # will be frozen
         self.decoder.load_state_dict(self.encoder.decoder.state_dict())
-        #for param in self.decoder.parameters():
-        #    param.requires_grad = False
+        for param in self.decoder.parameters():
+            param.requires_grad = False
         self.adain = adain
         print(f"Adain is trainable: {any(p.requires_grad for p in self.adain.parameters())}")
         print(f"Decoder is trainable: {any(p.requires_grad for p in self.decoder.parameters())}")
@@ -142,7 +142,7 @@ class StyleTransferModel(nn.Module):
         
         #_, _, mixed_features_patches = self.encoder(0.5*x_content+x_style)
         fused_features_patches = self.adain(content_features_patches, style_features_patches)
-        reconstructed = self.decoder(fused_features_patches)
-        #reconstructed = self.decoder(0.5*content_features_patches+style_features_patches)
+        #reconstructed = self.decoder(fused_features_patches)
+        reconstructed = self.decoder(0.5*content_features_patches+style_features_patches)
         return reconstructed
         

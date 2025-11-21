@@ -471,9 +471,7 @@ def main(config_path='config.yaml'):
                 sim_img = batch['simulation'][i].permute(1, 2, 0).cpu().numpy()
                 exp_img = batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
                 sim_img = inverse_transform(sim_img)
-                print(f"exp mean and std: {exp_img.mean()}, {exp_img.std()}")
                 exp_img = inverse_transform(exp_img)
-                print(f"exp mean and std: {exp_img.mean()}, {exp_img.std()}")
                 ax[2, i].hist(sim_img[..., 0].flatten(), bins=10)
                 ax[1, i].imshow(sim_img[..., 0], vmin=0, vmax=1, cmap='gray')
                 ax[0, i].imshow(exp_img)
@@ -541,7 +539,7 @@ def main(config_path='config.yaml'):
             ax[i, 1].axis('off')
         plt.tight_layout()
         plt.show()
-    if 0:
+    if 1:
         visualize_reconstructed_images(model,
             val_loader,
             device,

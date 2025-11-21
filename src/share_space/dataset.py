@@ -114,6 +114,11 @@ def get_dummy_dataloaders(batch_size: int = 32, num_workers: int = 4, img_size: 
     
     return train_loader, val_loader
 
+class InvertNonZero:
+    """Custom transform to invert non-zero values while keeping background at 0"""
+    def __call__(self, x):
+        return torch.where(x == 0, torch.zeros_like(x), 1 - x)
+
 class SimExpPairedDataset(Dataset):
     """Dataset for paired simulation and experimental images"""
     
@@ -171,7 +176,7 @@ class SimExpPairedDataset(Dataset):
         self.count_transform = T.Compose([
             T.Resize((img_size, img_size)),
             T.ToTensor(),  # Converts to [0, 1]
-            T.Lambda(lambda x: torch.where(x == 0, torch.zeros_like(x), 1 - x)),  # Keep background as 0, invert others
+            InvertNonZero(),
             T.Normalize(mean=[0.5], std=[0.5])  # Normalize to [-1, 1]
         ])
         # State channel: convert to one-hot encoding
