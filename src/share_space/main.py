@@ -436,6 +436,8 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
     evaluator = MetricsEvaluator(device=device)
     return style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator
 
+def inverse_transform(img):
+    return (img*0.5) + 0.5
 
 def main(config_path='config.yaml'):
     # Load configuration
@@ -457,19 +459,21 @@ def main(config_path='config.yaml'):
     )
 
     # Visualize the first batch of the training data
-    if 0:#:True:
+    if 0:#True:
         print("Visualizing first batch of the training data...")
         n_viz = 5
         sub_fig_size = 3
         val_iter = iter(val_loader)  # Create iterator once
-        for _ in range(2):
+        for _ in range(1):
             batch = next(val_iter)  # Get next batch from the same iterator
             fig, ax = plt.subplots(3, n_viz, figsize=(sub_fig_size * n_viz, sub_fig_size * 3))
             for i in range(n_viz):
                 sim_img = batch['simulation'][i].permute(1, 2, 0).cpu().numpy()
                 exp_img = batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
-                sim_img = sim_img * 0.5 + 0.5
-                exp_img = exp_img * 0.5 + 0.5
+                sim_img = inverse_transform(sim_img)
+                print(f"exp mean and std: {exp_img.mean()}, {exp_img.std()}")
+                exp_img = inverse_transform(exp_img)
+                print(f"exp mean and std: {exp_img.mean()}, {exp_img.std()}")
                 ax[2, i].hist(sim_img[..., 0].flatten(), bins=10)
                 ax[1, i].imshow(sim_img[..., 0], vmin=0, vmax=1, cmap='gray')
                 ax[0, i].imshow(exp_img)
@@ -605,11 +609,12 @@ def visualize_style_transfer(style_model, val_loader, device, save_dir, n_viz=5,
             sim_img = first_batch['simulation'][i].unsqueeze(0) # content
             pred_imgs = style_model(sim_img.to(device), exp_img.to(device))[0].permute(1, 2, 0).cpu().detach()
             shuffled_pred_imgs = style_model(sim_img.to(device), shuffled_exp_img.to(device))[0].permute(1, 2, 0).cpu().detach()
-            ax[i, 0].imshow(torch.clamp(exp_img[0].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy())
-            ax[i, 1].imshow(torch.clamp(sim_img[0].permute(1, 2, 0)[..., state].cpu().detach(), 0, 1).cpu().numpy(), cmap='gray')
-            ax[i, 2].imshow(torch.clamp(pred_imgs, 0, 1).cpu().numpy())
-            ax[i, 3].imshow(torch.clamp(shuffled_exp_img[0].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy())
-            ax[i, 4].imshow(torch.clamp(shuffled_pred_imgs, 0, 1).cpu().numpy())
+            
+            ax[i, 0].imshow(np.clip(inverse_transform(exp_img[0].permute(1, 2, 0).cpu().detach().numpy()), 0, 1))
+            ax[i, 1].imshow(np.clip(inverse_transform(sim_img[0].permute(1, 2, 0)[..., state].cpu().detach().numpy()), 0, 1), cmap='gray')
+            ax[i, 2].imshow(np.clip(inverse_transform(pred_imgs.numpy()), 0, 1))
+            ax[i, 3].imshow(np.clip(inverse_transform(shuffled_exp_img[0].permute(1, 2, 0).cpu().detach().numpy()), 0, 1))
+            ax[i, 4].imshow(np.clip(inverse_transform(shuffled_pred_imgs.numpy()), 0, 1))
             ax[i, 0].axis('off')
             ax[i, 1].axis('off')
             ax[i, 2].axis('off')
