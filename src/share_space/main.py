@@ -136,7 +136,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
     
     return best_psnr, loss_history
 
-def compute_feature_similarity_metrics(model, val_loader, device, verbose=True):
+def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verbose=True):
     """
     Compute cosine similarity and KL divergence metrics between content and style features.
     
@@ -172,83 +172,83 @@ def compute_feature_similarity_metrics(model, val_loader, device, verbose=True):
         
         if verbose:
             print(f"Total samples - content_features_cls: {content_features_cls.shape}, style_features_cls: {style_features_cls.shape}")
-        
+        if 0:
         # Normalize features for cosine similarity (L2 normalize)
-        content_norm = F.normalize(content_features_cls, p=2, dim=-1)
-        style_norm = F.normalize(style_features_cls, p=2, dim=-1)
-        
-        # Convert to probability distributions for KL divergence (using softmax)
-        content_probs = F.softmax(content_features_cls, dim=-1)
-        style_probs = F.softmax(style_features_cls, dim=-1)
-        
-        # ========== Cosine Similarity ==========
-        # Between content[i] and style[i] (paired)
-        content_style_cosine_paired = F.cosine_similarity(content_norm, style_norm, dim=-1).mean()
-        
-        # Within content group: content[i] vs content[j] (all pairs)
-        content_cosine = torch.matmul(content_norm, content_norm.t())  # [B, B] - cosine similarity matrix
-        mask = torch.triu(torch.ones_like(content_cosine), diagonal=1).bool()
-        content_only_cosine = content_cosine[mask].mean()
-        
-        # Within style group: style[i] vs style[j] (all pairs)
-        style_cosine = torch.matmul(style_norm, style_norm.t())  # [B, B] - cosine similarity matrix
-        mask = torch.triu(torch.ones_like(style_cosine), diagonal=1).bool()
-        style_only_cosine = style_cosine[mask].mean()
-        
-        # ========== KL Divergence ==========
-        # Between content[i] and style[i] (paired)
-        # KL(P||Q) = sum(P * log(P/Q)), where P=content, Q=style
-        content_log_probs = F.log_softmax(content_features_cls, dim=-1)
-        style_log_probs = F.log_softmax(style_features_cls, dim=-1)
-        
-        content_style_kl_paired = F.kl_div(
-            content_log_probs,
-            style_probs,
-            reduction='batchmean'
-        )
-        
-        # Within content group: content[i] vs content[j] (all pairs)
-        # Vectorized: compute all pairwise KL divergences
-        # KL(P_i || P_j) = sum(P_i * log(P_i / P_j)) = sum(P_i * (log(P_i) - log(P_j)))
-        content_probs_expanded = content_probs.unsqueeze(1)  # [B, 1, D]
-        content_log_diff = content_log_probs.unsqueeze(1) - content_log_probs.unsqueeze(0)  # [B, B, D]
-        content_kl_matrix = (content_probs_expanded * content_log_diff).sum(dim=-1)  # [B, B]
-        mask = torch.triu(torch.ones_like(content_kl_matrix), diagonal=1).bool()
-        content_only_kl = content_kl_matrix[mask].mean()
-        
-        # Within style group: style[i] vs style[j] (all pairs)
-        style_probs_expanded = style_probs.unsqueeze(1)  # [B, 1, D]
-        style_log_diff = style_log_probs.unsqueeze(1) - style_log_probs.unsqueeze(0)  # [B, B, D]
-        style_kl_matrix = (style_probs_expanded * style_log_diff).sum(dim=-1)  # [B, B]
-        mask = torch.triu(torch.ones_like(style_kl_matrix), diagonal=1).bool()
-        style_only_kl = style_kl_matrix[mask].mean()
-        
-        # Prepare results dictionary
-        results = {
-            'cosine_similarity': {
-                'content_style_paired': content_style_cosine_paired.item(),
-                'content_within': content_only_cosine.item(),
-                'style_within': style_only_cosine.item()
-            },
-            'kl_divergence': {
-                'content_style_paired': content_style_kl_paired.item(),
-                'content_within': content_only_kl.item(),
-                'style_within': style_only_kl.item()
+            content_norm = F.normalize(content_features_cls, p=2, dim=-1)
+            style_norm = F.normalize(style_features_cls, p=2, dim=-1)
+            
+            # Convert to probability distributions for KL divergence (using softmax)
+            content_probs = F.softmax(content_features_cls, dim=-1)
+            style_probs = F.softmax(style_features_cls, dim=-1)
+            
+            # ========== Cosine Similarity ==========
+            # Between content[i] and style[i] (paired)
+            content_style_cosine_paired = F.cosine_similarity(content_norm, style_norm, dim=-1).mean()
+            
+            # Within content group: content[i] vs content[j] (all pairs)
+            content_cosine = torch.matmul(content_norm, content_norm.t())  # [B, B] - cosine similarity matrix
+            mask = torch.triu(torch.ones_like(content_cosine), diagonal=1).bool()
+            content_only_cosine = content_cosine[mask].mean()
+            
+            # Within style group: style[i] vs style[j] (all pairs)
+            style_cosine = torch.matmul(style_norm, style_norm.t())  # [B, B] - cosine similarity matrix
+            mask = torch.triu(torch.ones_like(style_cosine), diagonal=1).bool()
+            style_only_cosine = style_cosine[mask].mean()
+            
+            # ========== KL Divergence ==========
+            # Between content[i] and style[i] (paired)
+            # KL(P||Q) = sum(P * log(P/Q)), where P=content, Q=style
+            content_log_probs = F.log_softmax(content_features_cls, dim=-1)
+            style_log_probs = F.log_softmax(style_features_cls, dim=-1)
+            
+            content_style_kl_paired = F.kl_div(
+                content_log_probs,
+                style_probs,
+                reduction='batchmean'
+            )
+            
+            # Within content group: content[i] vs content[j] (all pairs)
+            # Vectorized: compute all pairwise KL divergences
+            # KL(P_i || P_j) = sum(P_i * log(P_i / P_j)) = sum(P_i * (log(P_i) - log(P_j)))
+            content_probs_expanded = content_probs.unsqueeze(1)  # [B, 1, D]
+            content_log_diff = content_log_probs.unsqueeze(1) - content_log_probs.unsqueeze(0)  # [B, B, D]
+            content_kl_matrix = (content_probs_expanded * content_log_diff).sum(dim=-1)  # [B, B]
+            mask = torch.triu(torch.ones_like(content_kl_matrix), diagonal=1).bool()
+            content_only_kl = content_kl_matrix[mask].mean()
+            
+            # Within style group: style[i] vs style[j] (all pairs)
+            style_probs_expanded = style_probs.unsqueeze(1)  # [B, 1, D]
+            style_log_diff = style_log_probs.unsqueeze(1) - style_log_probs.unsqueeze(0)  # [B, B, D]
+            style_kl_matrix = (style_probs_expanded * style_log_diff).sum(dim=-1)  # [B, B]
+            mask = torch.triu(torch.ones_like(style_kl_matrix), diagonal=1).bool()
+            style_only_kl = style_kl_matrix[mask].mean()
+            
+            # Prepare results dictionary
+            results = {
+                'cosine_similarity': {
+                    'content_style_paired': content_style_cosine_paired.item(),
+                    'content_within': content_only_cosine.item(),
+                    'style_within': style_only_cosine.item()
+                },
+                'kl_divergence': {
+                    'content_style_paired': content_style_kl_paired.item(),
+                    'content_within': content_only_kl.item(),
+                    'style_within': style_only_kl.item()
+                }
             }
-        }
-        
-        if verbose:
-            print("=" * 60)
-            print("COSINE SIMILARITY:")
-            print(f"  content[i] vs style[i] (paired): {results['cosine_similarity']['content_style_paired']:.6f}")
-            print(f"  content[i] vs content[j] (within-group): {results['cosine_similarity']['content_within']:.6f}")
-            print(f"  style[i] vs style[j] (within-group): {results['cosine_similarity']['style_within']:.6f}")
-            print("=" * 60)
-            print("KL DIVERGENCE:")
-            print(f"  content[i] vs style[i] (paired): {results['kl_divergence']['content_style_paired']:.6f}")
-            print(f"  content[i] vs content[j] (within-group): {results['kl_divergence']['content_within']:.6f}")
-            print(f"  style[i] vs style[j] (within-group): {results['kl_divergence']['style_within']:.6f}")
-            print("=" * 60)
+            
+            if verbose:
+                print("=" * 60)
+                print("COSINE SIMILARITY:")
+                print(f"  content[i] vs style[i] (paired): {results['cosine_similarity']['content_style_paired']:.6f}")
+                print(f"  content[i] vs content[j] (within-group): {results['cosine_similarity']['content_within']:.6f}")
+                print(f"  style[i] vs style[j] (within-group): {results['cosine_similarity']['style_within']:.6f}")
+                print("=" * 60)
+                print("KL DIVERGENCE:")
+                print(f"  content[i] vs style[i] (paired): {results['kl_divergence']['content_style_paired']:.6f}")
+                print(f"  content[i] vs content[j] (within-group): {results['kl_divergence']['content_within']:.6f}")
+                print(f"  style[i] vs style[j] (within-group): {results['kl_divergence']['style_within']:.6f}")
+                print("=" * 60)
         
         # ========== PCA Visualization ==========
         # 1. Convert images to latents (already have all content_features_cls and style_features_cls)
@@ -267,7 +267,7 @@ def compute_feature_similarity_metrics(model, val_loader, device, verbose=True):
         style_latents_pca = pca.transform(style_latents_np)  # [N, 2]
         
         # 3. Scatter plot
-        fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+        fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
         
         ax.scatter(
             content_latents_pca[1:, 0], content_latents_pca[1:, 1],
@@ -291,16 +291,21 @@ def compute_feature_similarity_metrics(model, val_loader, device, verbose=True):
         )
         
         # Draw a line connecting the first pair
-        ax.plot([content_latents_pca[0, 0], style_latents_pca[0, 0]], 
-                [content_latents_pca[0, 1], style_latents_pca[0, 1]], 
-                'k--', alpha=0.5, linewidth=1.5)
-        
+        x0, y0 = content_latents_pca[0, 0], content_latents_pca[0, 1]
+        x1, y1 = style_latents_pca[0, 0], style_latents_pca[0, 1]
+        ax.plot([x0, x1], [y0, y1], 'k--', alpha=0.5, linewidth=1.5)
+
+        # Add crosses at 25%, 50%, 75% along the line
+        for frac in [0.25, 0.5, 0.75]:
+            xc = x0 + (x1 - x0) * frac
+            yc = y0 + (y1 - y0) * frac
+            ax.scatter(xc, yc, marker='x', color='gray', s=60, linewidths=2, zorder=10)
         ax.set_xlabel(f'PC1 (Explained Variance: {pca.explained_variance_ratio_[0]:.2%})', fontsize=12)
         ax.set_ylabel(f'PC2 (Explained Variance: {pca.explained_variance_ratio_[1]:.2%})', fontsize=12)
-        ax.set_title('PCA Visualization of Content and Style Latents (All Validation Samples)', fontsize=14, fontweight='bold')
         ax.legend(loc='best', fontsize=10)
-        ax.grid(True, alpha=0.3)
+        #ax.grid(True, alpha=0.3)
         plt.tight_layout()
+        plt.savefig(Path(save_dir) / f'pca_visualization.png', dpi=300, bbox_inches='tight')
         plt.show()
         
         # Add PCA results to return dictionary
@@ -486,59 +491,41 @@ def main(config_path='config.yaml'):
     best_psnr = float('-inf')
         
     # Train stage 1
-    if not config['training']['stage_1']['eval_only']:
-        best_psnr, loss_history = train_stage(
-            model=model,
-            trainer=trainer,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            loss_fn=loss_fn,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            evaluator=evaluator,
-            stage_config=config['training']['stage_1'],
-            stage_name='stage_1',
-            best_psnr=best_psnr,
-            device=device,
-            run_final_eval=True  # Set to True to run final evaluation and visualization
-        )
-
-    # Compute feature similarity metrics
-    #metrics = compute_feature_similarity_metrics(model, val_loader, device)
-    
-    style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
-    best_psnr = float('-inf')
-    best_psnr = train_stage(
-        model=style_model,
-        trainer=trainer_style,
+    best_psnr, loss_history = train_stage(
+        model=model,
+        trainer=trainer,
         optimizer=optimizer,
         scheduler=scheduler,
         loss_fn=loss_fn,
         train_loader=train_loader,
         val_loader=val_loader,
         evaluator=evaluator,
-        stage_config=config['training']['stage_2'],
-        stage_name='stage_2',
+        stage_config=config['training']['stage_1'],
+        stage_name='stage_1',
         best_psnr=best_psnr,
         device=device,
         run_final_eval=True  # Set to True to run final evaluation and visualization
     )
-    if 0:
-        style_model.encoder.eval()
-        first_batch = next(iter(val_loader))
-        pred_sim_imgs, _, _ = style_model.encoder(first_batch['simulation'].to(device))
-        pred_sim_imgs = pred_sim_imgs * 0.5 + 0.5
-        n_viz = 3
-        
-        fig, ax = plt.subplots(n_viz, 2, figsize=(6, 3 * n_viz))
-        for i in range(n_viz):
-            viz_pred_sim_img = pred_sim_imgs[i].permute(1, 2, 0).cpu().detach().numpy()
-            ax[i, 0].imshow(first_batch['simulation'][i].permute(1, 2, 0).cpu().numpy() * 0.5 + 0.5)
-            ax[i, 1].imshow(viz_pred_sim_img)
-            ax[i, 0].axis('off')
-            ax[i, 1].axis('off')
-        plt.tight_layout()
-        plt.show()
+    # Compute feature similarity metrics
+    #metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    if 1:
+        style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
+        best_psnr = float('-inf')
+        best_psnr = train_stage(
+            model=style_model,
+            trainer=trainer_style,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            loss_fn=loss_fn,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            evaluator=evaluator,
+            stage_config=config['training']['stage_2'],
+            stage_name='stage_2',
+            best_psnr=best_psnr,
+            device=device,
+            run_final_eval=True  # Set to True to run final evaluation and visualization
+        )
     if 1:
         visualize_reconstructed_images(model,
             val_loader,
@@ -547,33 +534,43 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    visualize_style_transfer(style_model,
-        val_loader,
-        device,
-        save_dir=config['visualization']['style_transfer']['save_dir'],
-        n_viz=config['visualization']['style_transfer']['n_viz'],
-        states=list(state_names.keys())
-    )
+    if 1:
+        visualize_style_transfer(style_model,
+            val_loader,
+            device,
+            save_dir=config['visualization']['style_transfer']['save_dir'],
+            n_viz=config['visualization']['style_transfer']['n_viz'],
+            states=list(state_names.keys())
+        )
 
 def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5, states=list(state_names.keys())):
     print(f"Visualizing reconstructed images...")
     model.eval()
     first_batch = next(iter(val_loader))
-    fig, ax = plt.subplots(n_viz, 4, figsize=(3 * 4, 3 * n_viz))
+    
     
     exp_imgs = first_batch['experimental']
     sim_imgs = first_batch['simulation']
-    pred_sim_imgs, _, _ = model(sim_imgs.to(device))
-    pred_exp_imgs, _, _ = model(exp_imgs.to(device))
-    # Renormalize the images to [0, 1]
-    # Reverse exp_transform: denormalize from [-1, 1] to [0, 1]
-    # Original: normalized = (x - 0.5) / 0.5, so reverse: x = normalized * 0.5 + 0.5
-    exp_imgs = exp_imgs * 0.5 + 0.5
-    pred_exp_imgs = pred_exp_imgs * 0.5 + 0.5
-    sim_imgs = sim_imgs * 0.5 + 0.5
-    pred_sim_imgs = pred_sim_imgs * 0.5 + 0.5
+    pred_sim_imgs, sim_cls_token, sim_patch_tokens = model(sim_imgs.to(device))
+    pred_exp_imgs, exp_cls_token, exp_patch_tokens = model(exp_imgs.to(device))
+
+    fig, ax = plt.subplots(1, 5, figsize=(3 * 5, 3))
+    for i in range(5):
+        fused_patches = i * 0.25 * sim_patch_tokens + (4 - i) * 0.25 * exp_patch_tokens
+        pred_fused_recon = model.decoder(fused_patches.to(device))[1]
+        ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
+        ax[i].axis('off')
+        ax[i].set_title(f'{i * 25}% Sim + {100 - i * 25}% Exp')
+    plt.tight_layout()
+    plt.savefig(Path(save_dir) / f'fused_reconstructed_images.png', dpi=300, bbox_inches='tight', transparent=True)
+
+    exp_imgs = inverse_transform(exp_imgs)
+    pred_exp_imgs = inverse_transform(pred_exp_imgs)
+    sim_imgs = inverse_transform(sim_imgs)
+    pred_sim_imgs = inverse_transform(pred_sim_imgs)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
+    fig, ax = plt.subplots(n_viz, 4, figsize=(3 * 4, 3 * n_viz))
     for state in states:
         for i in range(n_viz):
             ax[i, 0].imshow(torch.clamp(exp_imgs[i].permute(1, 2, 0).cpu().detach(), 0, 1).cpu().numpy())
