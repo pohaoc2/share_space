@@ -457,7 +457,7 @@ def main(config_path='config.yaml'):
     )
 
     # Visualize the first batch of the training data
-    if 0#:True:
+    if 0:#:True:
         print("Visualizing first batch of the training data...")
         n_viz = 5
         sub_fig_size = 3
