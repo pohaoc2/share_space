@@ -142,7 +142,7 @@ class StyleTransferModel(nn.Module):
         
         #_, _, mixed_features_patches = self.encoder(0.5*x_content+x_style)
         fused_features_patches = self.adain(content_features_patches, style_features_patches)
-        #reconstructed = self.decoder(fused_features_patches)
-        reconstructed = self.decoder(0.5*content_features_patches+style_features_patches)
+        reconstructed = self.decoder(fused_features_patches)
+        #reconstructed = self.decoder(0.5*content_features_patches+style_features_patches)
         return reconstructed
         

@@ -409,7 +409,7 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         #adain=AdaINFusion()
         #adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
-        adain=HistoAdaINSpatialAware(embed_dim=config['model']['embed_dim'])
+        adain=HistoAdaINSpatialAware(embed_dim=config['model']['embed_dim'], use_content_residual=config['training'][stage_name]['use_content_residual'])
         #adain=HistoAdaINHybrid(patch_size=config['model']['patch_size'])
     )
     if config['training'][stage_name]['use_diffusion']:
@@ -562,14 +562,15 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
         ax[i].axis('off')
         ax[i].set_title(f'{i * 25}% Sim + {100 - i * 25}% Exp')
     plt.tight_layout()
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     plt.savefig(Path(save_dir) / f'fused_reconstructed_images.png', dpi=300, bbox_inches='tight', transparent=True)
 
     exp_imgs = inverse_transform(exp_imgs)
     pred_exp_imgs = inverse_transform(pred_exp_imgs)
     sim_imgs = inverse_transform(sim_imgs)
     pred_sim_imgs = inverse_transform(pred_sim_imgs)
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+
     fig, ax = plt.subplots(n_viz, 4, figsize=(3 * 4, 3 * n_viz))
     for state in states:
         for i in range(n_viz):
@@ -604,7 +605,7 @@ def visualize_style_transfer(style_model, val_loader, device, save_dir, n_viz=5,
             sim_img = first_batch['simulation'][i].unsqueeze(0) # content
             pred_imgs = style_model(sim_img.to(device), exp_img.to(device))[0].permute(1, 2, 0).cpu().detach()
             shuffled_pred_imgs = style_model(sim_img.to(device), shuffled_exp_img.to(device))[0].permute(1, 2, 0).cpu().detach()
-            
+            print(f"pred_img[0] and shuffled_pred_imgs[0] is the same: {torch.allclose(pred_imgs[0], shuffled_pred_imgs[0])}")
             ax[i, 0].imshow(np.clip(inverse_transform(exp_img[0].permute(1, 2, 0).cpu().detach().numpy()), 0, 1))
             ax[i, 1].imshow(np.clip(inverse_transform(sim_img[0].permute(1, 2, 0)[..., state].cpu().detach().numpy()), 0, 1), cmap='gray')
             ax[i, 2].imshow(np.clip(inverse_transform(pred_imgs.numpy()), 0, 1))
