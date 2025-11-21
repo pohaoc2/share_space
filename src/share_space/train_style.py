@@ -307,10 +307,7 @@ class StyleTransferTrainer:
             torch.nn.utils.clip_grad_norm_(self.diffusion.parameters(), max_norm=1.0)
         
         optimizer.step()
-        
-        # Return scalar losses with pair count
         loss_dict = {k: v.item() for k, v in losses.items()}
-        loss_dict['n_pairs'] = outputs['n_pairs']
         
         return loss_dict
 

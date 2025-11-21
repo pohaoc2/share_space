@@ -170,7 +170,8 @@ class SimExpPairedDataset(Dataset):
         ])
         self.count_transform = T.Compose([
             T.Resize((img_size, img_size)),
-            T.ToTensor(),
+            T.ToTensor(),  # Converts to [0, 1]
+            T.Lambda(lambda x: torch.where(x == 0, torch.zeros_like(x), 1 - x)),  # Keep background as 0, invert others
             T.Normalize(mean=[0.5], std=[0.5])  # Normalize to [-1, 1]
         ])
         # State channel: convert to one-hot encoding

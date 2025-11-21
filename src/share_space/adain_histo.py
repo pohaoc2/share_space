@@ -109,7 +109,7 @@ class HistoAdaIN(nn.Module):
         return fused_features
 
 
-class HistoAdaINSpatialAware(nn.Module):
+class HistoAdaINSpatialAware (nn.Module):
     """
     Spatially-aware AdaIN with patch-level attention
     
@@ -118,11 +118,12 @@ class HistoAdaINSpatialAware(nn.Module):
     - Allow different patches to receive different amounts of style
     - Use cross-attention between content and style patches
     """
-    def __init__(self, embed_dim, num_heads=8, use_cross_attention=True):
+    def __init__(self, embed_dim, num_heads=8, use_cross_attention=True, use_content_residual=True):
         super().__init__()
         self.embed_dim = embed_dim
         self.use_cross_attention = use_cross_attention
-        
+        self.use_content_residual = use_content_residual
+
         # Style encoding
         self.style_encoder = nn.Sequential(
             nn.Linear(embed_dim, embed_dim),
@@ -139,7 +140,12 @@ class HistoAdaINSpatialAware(nn.Module):
                 dropout=0.1
             )
             self.norm_attn = nn.LayerNorm(embed_dim)
-        
+        if use_content_residual:
+            # Learnable weight for content preservation
+            self.content_weight = nn.Parameter(torch.tensor(0.5))
+            # Or per-dimension weights:
+            # self.content_weight = nn.Parameter(torch.ones(embed_dim) * 0.5)
+
         # Affine transformation networks
         self.gamma_net = nn.Sequential(
             nn.Linear(embed_dim, embed_dim),
@@ -165,6 +171,7 @@ class HistoAdaINSpatialAware(nn.Module):
         Returns:
             fused_features: (B, N, D)
         """
+
         # Handle CLS tokens (expand to single patch)
         if content_features.dim() == 2:
             content_features = content_features.unsqueeze(1)
@@ -200,8 +207,12 @@ class HistoAdaINSpatialAware(nn.Module):
         
         # === 5. Apply style transfer ===
         fused_features = content_normalized * gamma + beta
-        fused_features = self.norm_out(fused_features)
         
+        if self.use_content_residual:
+            # Add weighted content residual
+            fused_features = fused_features + self.content_weight * content_features
+        
+        fused_features = self.norm_out(fused_features)
         return fused_features
 
 

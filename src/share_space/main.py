@@ -403,7 +403,8 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         #decoder=feature_extractor.decoder,
         decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         #adain=AdaINFusion()
-        adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
+        #adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
+        adain=HistoAdaINSpatialAware(embed_dim=config['model']['embed_dim'])
         #adain=HistoAdaINHybrid(patch_size=config['model']['patch_size'])
     )
     if config['training'][stage_name]['use_diffusion']:
@@ -456,23 +457,26 @@ def main(config_path='config.yaml'):
     )
 
     # Visualize the first batch of the training data
-    if 0:#True:
+    if 0#:True:
         print("Visualizing first batch of the training data...")
-        first_batch = next(iter(val_loader))
-        fig, ax = plt.subplots(2, 5, figsize=(12, 6))
-        for i in range(5):
-            sim_img = first_batch['simulation'][i].permute(1, 2, 0).cpu().numpy()
-            exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
-            sim_img = sim_img * 0.5 + 0.5
-            exp_img = exp_img * 0.5 + 0.5
-            ax[0, i].imshow(sim_img[..., 0], vmin=0, vmax=1, cmap='gray')
-            ax[1, i].imshow(exp_img)
-            #ax[0, i].imshow(first_batch[0][i].permute(1, 2, 0).cpu().numpy())
-            #ax[1, i].imshow(first_batch[1][i].permute(1, 2, 0).cpu().numpy())
-            ax[0, i].axis('off')
-            ax[1, i].axis('off')
-        plt.tight_layout()
-        plt.show()
+        n_viz = 5
+        sub_fig_size = 3
+        val_iter = iter(val_loader)  # Create iterator once
+        for _ in range(2):
+            batch = next(val_iter)  # Get next batch from the same iterator
+            fig, ax = plt.subplots(3, n_viz, figsize=(sub_fig_size * n_viz, sub_fig_size * 3))
+            for i in range(n_viz):
+                sim_img = batch['simulation'][i].permute(1, 2, 0).cpu().numpy()
+                exp_img = batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
+                sim_img = sim_img * 0.5 + 0.5
+                exp_img = exp_img * 0.5 + 0.5
+                ax[2, i].hist(sim_img[..., 0].flatten(), bins=10)
+                ax[1, i].imshow(sim_img[..., 0], vmin=0, vmax=1, cmap='gray')
+                ax[0, i].imshow(exp_img)
+                ax[0, i].axis('off')
+                ax[1, i].axis('off')
+            plt.tight_layout()
+            plt.show()
     #asd()
     # Train stage 1
     model, trainer, optimizer, scheduler, loss_fn, evaluator = _get_stage_1_model(config, device, "stage_1")

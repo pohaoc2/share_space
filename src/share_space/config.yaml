@@ -38,14 +38,14 @@ training:
     run_final_eval: false
   stage_2:
     eval_only: false
-    epochs: 6
+    epochs: 2
     learning_rate: 0.0001
     weight_decay: 0.05
     teacher_momentum: 0.996
     mask_ratio: 0.5
     save_dir: ./checkpoints/stage_2
     load_path: ./checkpoints/stage_2/best_model.pth
-    eval_every: 2
+    eval_every: 1
     use_diffusion: false
     run_final_eval: false
 # Loss Weights
@@ -54,10 +54,10 @@ loss:
   distill_weight: 1.0
   mask_weight: 1.0
   diffusion_weight: 0.0
-  content_weight: 0.0
-  style_weight: 0 #5.0
+  content_weight: 1.0
+  style_weight: 1 #5.0
   element_weight: 0.0
-  image_weight: 1.0
+  image_weight: 10.0
   fused_patches_weight: 1.0
 # Data Configuration
 data:
