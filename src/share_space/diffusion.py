@@ -241,6 +241,7 @@ class UNetModel(nn.Module):
         self.time_emb_dim_output = time_emb_dim * 4
         self.num_res_blocks = num_res_blocks
         self.in_channels = in_channels
+        self.out_channels = out_channels
         
         # Input convolution
         self.conv_in = nn.Conv2d(in_channels, model_channels, 3, padding=1)
@@ -291,7 +292,7 @@ class UNetModel(nn.Module):
         
         # Output
         self.norm_out = nn.GroupNorm(32, ch)
-        self.conv_out = nn.Conv2d(ch, out_channels, 3, padding=1)
+        self.conv_out = nn.Conv2d(ch, self.out_channels, 3, padding=1)
     
     def forward(self, x, timesteps, style_condition=None):
         """

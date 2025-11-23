@@ -60,7 +60,6 @@ class TeacherStudentTrainer:
         
         # Student forward
         student_recon, student_cls, student_patches = self.student(images, masks)
-        
         # Teacher forward (no gradient, no mask)
         with torch.no_grad():
             teacher_recon, teacher_cls, teacher_patches = self.teacher(images, None)
@@ -158,7 +157,7 @@ class TeacherStudentTrainer:
         # Create random mask
         mask = (torch.rand(B, num_patches, device=self.device, dtype=torch.float32) < mask_ratio).float()
         
-        # Forward pass
+        # Forward pas
         outputs = self.forward_pass(images, mask)
         
         latent_vector = outputs['teacher_cls']
@@ -166,7 +165,6 @@ class TeacherStudentTrainer:
         # Reshape for diffusion
         H_latent = W_latent = int(math.sqrt(latent_vector.shape[1] / self.diffusion.unet.in_channels))
         latent_vector = latent_vector.view(B, self.diffusion.unet.in_channels, H_latent, W_latent)
-        
         # Diffusion process
         t = torch.randint(
             0, 
