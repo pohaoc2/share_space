@@ -174,10 +174,10 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
         # Concatenate all batches
         content_features_cls = torch.cat(all_content_latents, dim=0)  # [N, D]
         style_features_cls = torch.cat(all_style_latents, dim=0)  # [N, D]
-        
+        results = {}
         if verbose:
             print(f"Total samples - content_features_cls: {content_features_cls.shape}, style_features_cls: {style_features_cls.shape}")
-        if 0:
+        if 1:
         # Normalize features for cosine similarity (L2 normalize)
             content_norm = F.normalize(content_features_cls, p=2, dim=-1)
             style_norm = F.normalize(style_features_cls, p=2, dim=-1)
