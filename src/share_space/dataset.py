@@ -118,7 +118,7 @@ class InvertNonZero:
     """Custom transform to invert non-zero values while keeping background at 0"""
     def __call__(self, x):
         return torch.where(x == 0, 1, x)
-        return torch.where(x == 0, torch.zeros_like(x), 1 - x)
+        #return torch.where(x == 0, torch.zeros_like(x), 1 - x)
 
 class SimExpPairedDataset(Dataset):
     """Dataset for paired simulation and experimental images"""

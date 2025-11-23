@@ -470,7 +470,7 @@ def main(config_path='config.yaml'):
     )
 
     # Visualize the first batch of the training data
-    if True:
+    if 0:#True:
         print("Visualizing first batch of the training data...")
         n_viz = 5
         sub_fig_size = 3
@@ -490,7 +490,7 @@ def main(config_path='config.yaml'):
                 ax[1, i].axis('off')
             plt.tight_layout()
             plt.show()
-    asd()
+        plt.savefig(f'first_batch_visualization.png', dpi=300, bbox_inches='tight')
     # Train stage 1
     model, trainer, optimizer, scheduler, loss_fn, evaluator = _get_stage_1_model(config, device, "stage_1")
     print("Starting training...")
@@ -514,91 +514,89 @@ def main(config_path='config.yaml'):
     )
     # Compute feature similarity metrics
     metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
-    print(f"Metrics: {metrics}")
-    sad()
-    latent_adapter = LatentDomainAdapter(
-        feature_extractor=model.encoder,
-        n_patches=(config['model']['img_size'] // config['model']['patch_size']) ** 2,
-        latent_dim=config['model']['embed_dim'],
-    )
-    for _ in range(1):
-        loss = train_latent_adapter_epoch(latent_adapter, train_loader, optimizer, device=device)
-        print(f"Loss dictionary: {loss}")
-            # Compare with ground truth
-    test_batch = next(iter(val_loader))
-    sim_images_test = test_batch['simulation'].to(device)
-    exp_images_test = test_batch['experimental'].to(device)
-    with torch.no_grad():
-        _, sim_latents = model.encoder(sim_images_test)
-        _, target_latents = model.encoder(exp_images_test)
-    mse_original = torch.nn.functional.mse_loss(sim_latents, target_latents)
-    print(f"MSE between original and target: {mse_original.item():.4f}")
-    generated_latents, _ = latent_adapter(sim_images_test, exp_images_test)
-    mse = torch.nn.functional.mse_loss(generated_latents, target_latents)
-    print(f"MSE between generated and target: {mse.item():.4f}")
-    if 0:
-        # Train diffusion model
-        diffusion_model = DiffusionModel(
-            unet_config=config['diffusion']['unet_config'],
-            timesteps=config['diffusion']['timesteps'],
-            beta_start=config['diffusion']['beta_start'],
-            beta_end=config['diffusion']['beta_end']
+    if 0: # latent adapter training
+        latent_adapter = LatentDomainAdapter(
+            feature_extractor=model.encoder,
+            n_patches=(config['model']['img_size'] // config['model']['patch_size']) ** 2,
+            latent_dim=config['model']['embed_dim'],
         )
-        trainer_diffusion = LatentDiffusionTrainer(
-            diffusion_model=diffusion_model,
-            sim_feature_extractor=model.encoder,
-            exp_feature_extractor=model.encoder,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            embedding_dim=config['model']['embed_dim'],
-            device=device
-        )
-        trainer_diffusion.train(num_epochs=2)
+        for _ in range(1):
+            loss = train_latent_adapter_epoch(latent_adapter, train_loader, optimizer, device=device)
+            print(f"Loss dictionary: {loss}")
+                # Compare with ground truth
         test_batch = next(iter(val_loader))
-        sim_images_test = test_batch['simulation'][:4].to(device)
-        exp_images_test = test_batch['experimental'][:4].to(device)
-        
-        # Generate experimental latents from simulation images
+        sim_images_test = test_batch['simulation'].to(device)
+        exp_images_test = test_batch['experimental'].to(device)
         with torch.no_grad():
-            generated_latents = trainer_diffusion.sample_translations(
-                sim_images_test,
-                num_inference_steps=200,
-                use_ema=True
-            )
-        
-        print(f"Generated latents shape: {generated_latents.shape}")
-        
-        # Compare with ground truth
-        with torch.no_grad():
-            sim_latents, target_latents = trainer_diffusion.extract_latents(sim_images_test, exp_images_test)
+            _, sim_latents = model.encoder(sim_images_test)
+            _, target_latents = model.encoder(exp_images_test)
         mse_original = torch.nn.functional.mse_loss(sim_latents, target_latents)
         print(f"MSE between original and target: {mse_original.item():.4f}")
+        generated_latents, _ = latent_adapter(sim_images_test, exp_images_test)
         mse = torch.nn.functional.mse_loss(generated_latents, target_latents)
         print(f"MSE between generated and target: {mse.item():.4f}")
-        
-        print("\nTraining completed successfully!")
-    recon_sim = model.decoder(sim_latents.to(device))
-    recon_target = model.decoder(target_latents.to(device))
-    recon_generated = model.decoder(generated_latents.to(device))
-    print(f"Recon generated shape: {recon_generated.shape}")
-    fig, ax = plt.subplots(1, 5, figsize=(3 * 5, 3))
-    ax[0].imshow(inverse_transform(sim_images_test[0].permute(1, 2, 0).cpu().detach().numpy()))
-    ax[1].imshow(inverse_transform(recon_sim[0].permute(1, 2, 0).cpu().detach().numpy()))
-    ax[2].imshow(inverse_transform(exp_images_test[0].permute(1, 2, 0).cpu().detach().numpy()))
-    ax[3].imshow(inverse_transform(recon_target[0].permute(1, 2, 0).cpu().detach().numpy()))
-    ax[4].imshow(inverse_transform(recon_generated[0].permute(1, 2, 0).cpu().detach().numpy()))
-    ax[0].set_title('Sim (Input)', loc='center')
-    ax[1].set_title('Sim Reconstructed (Output)', loc='center')
-    ax[2].set_title('Exp (Input)', loc='center')
-    ax[3].set_title('Exp Reconstructed (Output)', loc='center')
-    ax[4].set_title('Generated (Output)', loc='center')
-    for i in range(5):
-        ax[i].axis('off')
-    plt.tight_layout()
-    plt.savefig(Path(config['training']['stage_1']['save_dir']) / f'generated_images.png', dpi=300, bbox_inches='tight')
-    plt.show()
-    asd()
-    if 1:
+        if 0:
+            # Train diffusion model
+            diffusion_model = DiffusionModel(
+                unet_config=config['diffusion']['unet_config'],
+                timesteps=config['diffusion']['timesteps'],
+                beta_start=config['diffusion']['beta_start'],
+                beta_end=config['diffusion']['beta_end']
+            )
+            trainer_diffusion = LatentDiffusionTrainer(
+                diffusion_model=diffusion_model,
+                sim_feature_extractor=model.encoder,
+                exp_feature_extractor=model.encoder,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                embedding_dim=config['model']['embed_dim'],
+                device=device
+            )
+            trainer_diffusion.train(num_epochs=2)
+            test_batch = next(iter(val_loader))
+            sim_images_test = test_batch['simulation'][:4].to(device)
+            exp_images_test = test_batch['experimental'][:4].to(device)
+            
+            # Generate experimental latents from simulation images
+            with torch.no_grad():
+                generated_latents = trainer_diffusion.sample_translations(
+                    sim_images_test,
+                    num_inference_steps=200,
+                    use_ema=True
+                )
+            
+            print(f"Generated latents shape: {generated_latents.shape}")
+            
+            # Compare with ground truth
+            with torch.no_grad():
+                sim_latents, target_latents = trainer_diffusion.extract_latents(sim_images_test, exp_images_test)
+            mse_original = torch.nn.functional.mse_loss(sim_latents, target_latents)
+            print(f"MSE between original and target: {mse_original.item():.4f}")
+            mse = torch.nn.functional.mse_loss(generated_latents, target_latents)
+            print(f"MSE between generated and target: {mse.item():.4f}")
+            
+            print("\nTraining completed successfully!")
+        recon_sim = model.decoder(sim_latents.to(device))
+        recon_target = model.decoder(target_latents.to(device))
+        recon_generated = model.decoder(generated_latents.to(device))
+        print(f"Recon generated shape: {recon_generated.shape}")
+        fig, ax = plt.subplots(1, 5, figsize=(3 * 5, 3))
+        ax[0].imshow(inverse_transform(sim_images_test[0].permute(1, 2, 0).cpu().detach().numpy()))
+        ax[1].imshow(inverse_transform(recon_sim[0].permute(1, 2, 0).cpu().detach().numpy()))
+        ax[2].imshow(inverse_transform(exp_images_test[0].permute(1, 2, 0).cpu().detach().numpy()))
+        ax[3].imshow(inverse_transform(recon_target[0].permute(1, 2, 0).cpu().detach().numpy()))
+        ax[4].imshow(inverse_transform(recon_generated[0].permute(1, 2, 0).cpu().detach().numpy()))
+        ax[0].set_title('Sim (Input)', loc='center')
+        ax[1].set_title('Sim Reconstructed (Output)', loc='center')
+        ax[2].set_title('Exp (Input)', loc='center')
+        ax[3].set_title('Exp Reconstructed (Output)', loc='center')
+        ax[4].set_title('Generated (Output)', loc='center')
+        for i in range(5):
+            ax[i].axis('off')
+        plt.tight_layout()
+        plt.savefig(Path(config['training']['stage_1']['save_dir']) / f'generated_images.png', dpi=300, bbox_inches='tight')
+        plt.show()
+    if 0:
         style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
         best_psnr = float('-inf')
         best_psnr = train_stage(
@@ -624,7 +622,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    if 1:
+    if 0:
         visualize_style_transfer(style_model,
             val_loader,
             device,
