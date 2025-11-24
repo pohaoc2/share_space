@@ -120,7 +120,7 @@ class StyleTransferModel(nn.Module):
         self.encoder = feature_extractor # frozen
         for param in self.encoder.parameters():
             param.requires_grad = False
-        self.decoder = decoder  # will be frozen
+        self.decoder = decoder
         self.decoder.load_state_dict(self.encoder.decoder.state_dict())
         for param in self.decoder.parameters():
             param.requires_grad = False

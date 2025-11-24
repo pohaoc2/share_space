@@ -414,8 +414,8 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         #decoder=feature_extractor.decoder,
         decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         #adain=AdaINFusion()
-        #adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
-        adain=HistoAdaINSpatialAware(embed_dim=config['model']['embed_dim'], use_content_residual=config['training'][stage_name]['use_content_residual'])
+        adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
+        #adain=HistoAdaINSpatialAware(embed_dim=config['model']['embed_dim'], use_content_residual=config['training'][stage_name]['use_content_residual'])
         #adain=HistoAdaINHybrid(patch_size=config['model']['patch_size'])
     )
     if config['training'][stage_name]['use_diffusion']:
@@ -513,7 +513,7 @@ def main(config_path='config.yaml'):
         run_final_eval=True  # Set to True to run final evaluation and visualization
     )
     # Compute feature similarity metrics
-    metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    #metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
@@ -596,7 +596,7 @@ def main(config_path='config.yaml'):
         plt.tight_layout()
         plt.savefig(Path(config['training']['stage_1']['save_dir']) / f'generated_images.png', dpi=300, bbox_inches='tight')
         plt.show()
-    if 0:
+    if 1:
         style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
         best_psnr = float('-inf')
         best_psnr = train_stage(
@@ -622,7 +622,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    if 0:
+    if 1:
         visualize_style_transfer(style_model,
             val_loader,
             device,
@@ -643,12 +643,63 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
     pred_exp_imgs, exp_cls_token, exp_patch_tokens = model(exp_imgs.to(device))
 
     fig, ax = plt.subplots(1, 5, figsize=(3 * 5, 3))
-    for i in range(5):
+    for i in range(0):
         fused_patches = i * 0.25 * sim_patch_tokens + (4 - i) * 0.25 * exp_patch_tokens
         pred_fused_recon = model.decoder(fused_patches.to(device))[1]
         ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
         ax[i].axis('off')
         ax[i].set_title(f'{i * 25}% Sim + {100 - i * 25}% Exp')
+    exp_idx = 5
+    # fit the exp distribution and sample from it
+    # Convert to numpy and get the shape
+    exp_patch_tokens_np = exp_patch_tokens.cpu().detach().numpy()
+    B, num_patches, embed_dim = exp_patch_tokens_np.shape
+    
+    # Fit a separate multivariate Gaussian distribution for each patch position
+    patch_means = []
+    patch_covs = []
+    
+    for patch_idx in range(num_patches):
+        # Collect all tokens for this patch position across all batches
+        # Shape: (B, embed_dim)
+        patch_tokens = exp_patch_tokens_np[:, patch_idx, :]
+        
+        # Fit multivariate Gaussian for this patch position
+        mean = np.mean(patch_tokens, axis=0)  # (embed_dim,)
+        cov = np.cov(patch_tokens.T)  # (embed_dim, embed_dim)
+        
+        # Add small regularization to ensure covariance is positive definite
+        cov += np.eye(embed_dim) * 1e-6
+        
+        patch_means.append(mean)
+        patch_covs.append(cov)
+    
+    # Sample from each patch's distribution with the same shape as exp_patch_tokens
+    sampled_patch_tokens = np.zeros((B, num_patches, embed_dim))
+    for patch_idx in range(num_patches):
+        # Sample B vectors from this patch's distribution
+        sampled_patch_tokens[:, patch_idx, :] = np.random.multivariate_normal(
+            patch_means[patch_idx], 
+            patch_covs[patch_idx], 
+            size=B
+        )
+    
+    sampled_patch_tokens = torch.from_numpy(sampled_patch_tokens).float().to(device)
+    
+    for i in range(5):
+        # Use the sampled patch tokens (you can index by i if you want different samples)
+        fused_patches = sampled_patch_tokens[i:i+1] if i < B else sampled_patch_tokens[0:1]
+        pred_fused_recon = model.decoder(fused_patches.to(device))[0]
+        ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
+        ax[i].axis('off')
+        #ax[i].set_title(f'Sample from Exp Distribution')
+    for i in range(0):
+        #fused_patches = i * 0.25 * exp_patch_tokens[exp_idx:exp_idx+1] + (4 - i) * 0.25 * exp_patch_tokens[exp_idx+1:exp_idx+2]
+        #pred_fused_recon = model.decoder(random_fused_patches.to(device))[0]
+        pred_fused_recon = model.decoder(fused_patches.to(device))[0]
+        ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
+        ax[i].axis('off')
+        ax[i].set_title(f'{i * 25}% Exp1 + {100 - i * 25}% Exp2')
     plt.tight_layout()
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
