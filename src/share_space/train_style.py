@@ -114,7 +114,7 @@ class StyleTransferTrainer:
             else:
                 shuffled_style_features_cls = style_features_cls
                 shuffled_style_features_patches = style_features_patches
-            
+
             fused_features_patches = self.adain(content_features_patches, shuffled_style_features_patches)
             fused_features_cls = self.adain(content_features_cls, shuffled_style_features_cls)
             fused_features_cls = fused_features_cls.view(fused_features_cls.shape[0], -1)
@@ -125,11 +125,6 @@ class StyleTransferTrainer:
             # Extract features from output
             with torch.no_grad():
                 _, output_features_cls, output_features_patches = self.extract_features(output_images)
-            
-            # For 1:1, content features are already aligned
-            content_features_cls_expanded = content_features_cls
-            style_features_patches_target = shuffled_style_features_patches
-            style_features_cls_target = shuffled_style_features_cls
             n_pairs = B
             
         else:
@@ -220,9 +215,9 @@ class StyleTransferTrainer:
             noise_pred = self.diffusion.unet(noisy_features, t)
         
         return {
-            'content_features_cls': content_features_cls_expanded,
-            'style_features_cls': style_features_cls_target,
-            'style_features_patches': style_features_patches_target,
+            'content_features_cls': content_features_cls,
+            'style_features_cls': style_features_cls,
+            'style_features_patches': style_features_patches,
             'fused_features_patches': fused_features_patches,
             'fused_features_cls': fused_features_cls,
             'output_images': output_images,

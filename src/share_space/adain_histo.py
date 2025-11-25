@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import copy
 class HistoAdaIN(nn.Module):
     """
     AdaIN for histopathology style transfer with ViT features
@@ -49,7 +49,18 @@ class HistoAdaIN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(embed_dim // 2, embed_dim)
             )
-    
+            self.test_net = nn.Sequential(
+                nn.Linear(embed_dim, embed_dim),
+                nn.Linear(embed_dim, embed_dim)
+            )
+            if 0:
+                nn.init.eye_(self.test_net[0].weight)
+                self.test_net[0].weight.data += torch.randn_like(self.test_net[0].weight) * 0.01
+                nn.init.zeros_(self.test_net[0].bias)
+                nn.init.eye_(self.test_net[1].weight)
+                self.test_net[1].weight.data += torch.randn_like(self.test_net[1].weight) * 0.01
+                nn.init.zeros_(self.test_net[1].bias)
+            self.test_net2 = copy.deepcopy(self.test_net)
     def forward(self, content_features, style_features):
         """
         Args:
@@ -105,7 +116,7 @@ class HistoAdaIN(nn.Module):
         
         # === 3. Apply style transfer ===
         fused_features = content_normalized * gamma + beta
-        
+        fused_features = self.test_net(style_features) + self.test_net2(content_features)
         return fused_features
 
 

@@ -467,7 +467,8 @@ def main(config_path='config.yaml'):
         batch_size=config['data']['batch_size'],
         num_workers=config['data']['num_workers'],
         img_size=config['model']['img_size'],
-        train_split=config['data']['train_split']
+        train_split=config['data']['train_split'],
+        seed=config['data']['seed']
     )
 
     # Visualize the first batch of the training data
@@ -615,7 +616,7 @@ def main(config_path='config.yaml'):
             device=device,
             run_final_eval=True  # Set to True to run final evaluation and visualization
         )
-    if 1:
+    if 0:
         visualize_reconstructed_images(model,
             val_loader,
             device,

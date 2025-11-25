@@ -156,7 +156,8 @@ class SimExpPairedDataset(Dataset):
                  sim_dir: str = "sim", 
                  img_size: int = 224,
                  transform: Optional[T.Compose] = None,
-                 debugging: bool = False):
+                 debugging: bool = False,
+                 seed: Optional[int] = None):
         """
         Args:
             exp_dir: Directory containing experimental images
@@ -169,6 +170,7 @@ class SimExpPairedDataset(Dataset):
         self.sim_dir = Path(sim_dir)
         self.img_size = img_size
         self.debugging = debugging
+        self.seed = seed
         self.exp_transform = T.Compose([
             T.Resize((img_size, img_size)),
             T.ToTensor(),
@@ -259,7 +261,10 @@ class SimExpPairedDataset(Dataset):
     
     def __getitem__(self, idx: int) -> dict:
         exp_path, sim_state_path, sim_count_path = self.pairs[idx]
-        shuffled_idx = torch.randperm(len(self.pairs))[idx]
+        rng = torch.Generator()
+        if hasattr(self, 'seed') and self.seed is not None:
+            rng.manual_seed(self.seed)
+        shuffled_idx = torch.randperm(len(self.pairs), generator=rng)[idx]
         shuffled_exp_path, shuffled_sim_state_path, shuffled_sim_count_path = self.pairs[shuffled_idx]
         shuffled_exp_img = Image.open(shuffled_exp_path).convert('RGB')
         shuffled_exp_tensor = self.exp_transform(shuffled_exp_img)  # (3, H, W), normalized to [-1, 1]
@@ -305,7 +310,7 @@ def get_real_dataloaders(
     exp_dir: str = "exp",
     sim_dir: str = "sim",
     batch_size: int = 32,
-    num_workers: int = 4,
+    num_workers: int = 2,
     img_size: int = 224,
     train_split: float = 0.9,
     seed: int = 42,
