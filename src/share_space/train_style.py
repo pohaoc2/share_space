@@ -301,7 +301,6 @@ class StyleTransferTrainer:
         # Backward pass
         optimizer.zero_grad()
         losses['fused_patches'].backward()
-        
         # Gradient clipping for stability
         torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=1.0)
         torch.nn.utils.clip_grad_norm_(self.adain.parameters(), max_norm=1.0)

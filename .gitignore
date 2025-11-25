@@ -7,7 +7,7 @@
 *.pth
 *.json
 *.zip
-
+*.npy
 
 # Editors
 .vscode/

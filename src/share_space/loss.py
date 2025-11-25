@@ -238,6 +238,8 @@ class StyleTransferLoss(nn.Module):
         Fused features patches loss (Eq. 11): L_FusedPatches = ||A(X_s, X_i) - X_s||²_2
         Measures fine-grained differences at element level
         """
+        fused_features_patches = fused_features_patches.reshape(-1, fused_features_patches.shape[-1])
+        style_features_patches = style_features_patches.reshape(-1, style_features_patches.shape[-1])
         return F.mse_loss(fused_features_patches, style_features_patches)
     
     def forward(self, 
@@ -260,6 +262,7 @@ class StyleTransferLoss(nn.Module):
         losses = {}
         
         # Content loss (Eq. 6)
+        """
         losses['content'] = self.content_weight * self.content_loss(content_latent, output_latent)
         
         # Style loss (Eq. 7)
@@ -267,17 +270,18 @@ class StyleTransferLoss(nn.Module):
         
         # Element loss (Eq. 9)
         losses['element'] = self.element_weight * self.element_loss(adain_features, output_latent)
-        
+        """
         # Fused features patches loss (Eq. 11)
         losses['fused_patches'] = self.fused_patches_weight * self.fused_patches_loss(fused_features_patches, style_features_patches)
+        
         # Diffusion loss (Eq. 8) - optional
         if self.use_diffusion and noise_pred is not None and noise_target is not None:
             losses['diffusion'] = self.diffusion_weight * self.diffusion_loss(noise_pred, noise_target)
-        
+        """
         # Image loss (Eq. 10)
         losses['image'] = self.image_weight * self.image_loss(output_images, target_images)
         
         # Total loss
         losses['total'] = sum(losses.values())
-        
+        """
         return losses

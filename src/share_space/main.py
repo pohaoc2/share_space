@@ -3,7 +3,9 @@ from pathlib import Path
 import json
 import matplotlib.pyplot as plt
 import torch
+import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 from share_space.models.sim2exp_model import Sim2ExpModel, StyleTransferModel
 from share_space.train import TeacherStudentTrainer
 from share_space.loss import Sim2ExpLoss, StyleTransferLoss
@@ -435,7 +437,8 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         use_all_pairs=config['training'][stage_name]['use_all_pairs']
     )
     optimizer = optim.AdamW(
-        list(style_model.decoder.parameters()) + (list(diffusion_model.parameters()) + list(style_model.adain.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
+#        list(style_model.decoder.parameters()) + (list(diffusion_model.parameters()) + list(style_model.adain.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
+        list(style_model.adain.parameters()),
         lr=config['training'][stage_name]['learning_rate'],
         weight_decay=config['training'][stage_name]['weight_decay']
     )
@@ -447,6 +450,51 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
 
     evaluator = MetricsEvaluator(device=device)
     return style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator
+
+def train_adain_epoch(adain_model, train_loader, optimizer, device='cuda', loss_fn=None):
+    """
+    Train AdaIN model where input and output are the same (identity mapping).
+    
+    Args:
+        adain_model: The AdaIN model to train
+        train_loader: DataLoader containing feature tensors (same as input and target)
+        optimizer: Optimizer for training
+        device: Device to run training on
+        loss_fn: Loss function (defaults to MSELoss if None)
+    
+    Returns:
+        Dictionary containing loss information
+    """
+    if loss_fn is None:
+        loss_fn = nn.MSELoss()
+    
+    adain_model.train()
+    adain_model.to(device)
+    
+    total_loss = 0.0
+    num_batches = 0
+    
+    for batch in train_loader:
+        # Move batch to device
+        features = batch.to(device) if isinstance(batch, torch.Tensor) else batch[0].to(device)
+        
+        # Use the same features as both content and style (identity mapping)
+        output = adain_model(features, features)
+        
+        # Compute loss: output should match input
+        loss = loss_fn(output, features)
+        
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        total_loss += loss.item()
+        num_batches += 1
+    
+    avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+    
+    return {'loss': avg_loss}
 
 def inverse_transform(img):
     return (img*0.5) + 0.5
@@ -496,7 +544,17 @@ def main(config_path='config.yaml'):
     model, trainer, optimizer, scheduler, loss_fn, evaluator = _get_stage_1_model(config, device, "stage_1")
     print("Starting training...")
     best_psnr = float('-inf')
-        
+    # save the features of images
+    if 0:
+        exp_features_list = []  
+        for batch in train_loader:
+            exp_images = batch['experimental'].to(device)
+            _, exp_features = model.encoder(exp_images)
+            exp_features_list.append(exp_features.cpu())
+        exp_features_list = torch.cat(exp_features_list, dim=0)
+        print(f"Exp features shape: {exp_features_list.shape}")
+        np.save('exp_features.npy', exp_features_list.detach().numpy())
+
     # Train stage 1
     best_psnr, loss_history = train_stage(
         model=model,
@@ -599,6 +657,20 @@ def main(config_path='config.yaml'):
         plt.show()
     if 1:
         style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
+        if 0:
+            adain_model = style_model.adain
+            exp_features_list = np.load('exp_features.npy')
+            exp_features_list = torch.from_numpy(exp_features_list).to(device)
+            train_loader = DataLoader(exp_features_list, batch_size=128, shuffle=True)
+            loss_fn = nn.MSELoss()
+            optimizer = optim.AdamW(adain_model.parameters(), lr=0.001, weight_decay=0.0)
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=0.001)
+            evaluator = MetricsEvaluator(device=device)
+            for epoch in range(100):
+                loss = train_adain_epoch(adain_model, train_loader, optimizer, device=device, loss_fn=loss_fn)
+                if epoch % 10 == 0:
+                    print(f"Epoch {epoch} loss: {loss['loss']:.6f}")
+            asd()
         best_psnr = float('-inf')
         best_psnr = train_stage(
             model=style_model,
