@@ -446,7 +446,12 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
             'weight_decay': config['training'][stage_name]['weight_decay'],
         }
     ]
-
+    if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None:
+        param_groups.append({
+            'params': diffusion_model.parameters(),
+            'lr': config['training'][stage_name]['learning_rate'],
+            'weight_decay': config['training'][stage_name]['weight_decay'],
+        })
     optimizer = optim.AdamW(param_groups)
     if 0:
         optimizer = optim.AdamW(

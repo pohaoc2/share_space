@@ -58,19 +58,19 @@ class TimeEmbedding(nn.Module):
 
 
 class ResBlock(nn.Module):
-    """Residual block with time conditioning"""
+    """Residual block with time conditioning - Modified for 1D input"""
     def __init__(self, in_channels, out_channels, time_emb_dim):
         super().__init__()
         self.norm1 = nn.GroupNorm(32, in_channels)
-        self.conv1 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
+        self.conv1 = nn.Conv1d(in_channels, out_channels, 3, padding=1)
         
         self.time_mlp = nn.Linear(time_emb_dim, out_channels)
         
         self.norm2 = nn.GroupNorm(32, out_channels)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        self.conv2 = nn.Conv1d(out_channels, out_channels, 3, padding=1)
         
         if in_channels != out_channels:
-            self.shortcut = nn.Conv2d(in_channels, out_channels, 1)
+            self.shortcut = nn.Conv1d(in_channels, out_channels, 1)
         else:
             self.shortcut = nn.Identity()
     
@@ -79,9 +79,9 @@ class ResBlock(nn.Module):
         h = F.silu(h)
         h = self.conv1(h)
         
-        # Add time embedding
+        # Add time embedding (B, C, N) format
         t = self.time_mlp(F.silu(t_emb))
-        h = h + t[:, :, None, None]
+        h = h + t[:, :, None]
         
         h = self.norm2(h)
         h = F.silu(h)
@@ -91,7 +91,7 @@ class ResBlock(nn.Module):
 
 
 class AttentionBlock(nn.Module):
-    """Self-attention block"""
+    """Self-attention block - Modified for 1D input"""
     def __init__(self, channels, num_heads=8):
         super().__init__()
         self.norm = nn.GroupNorm(32, channels)
@@ -100,16 +100,16 @@ class AttentionBlock(nn.Module):
         )
     
     def forward(self, x):
-        B, C, H, W = x.shape
+        B, C, N = x.shape
         h = self.norm(x)
-        h = h.reshape(B, C, H * W).permute(0, 2, 1)  # (B, H*W, C)
+        h = h.permute(0, 2, 1)  # (B, N, C)
         h, _ = self.attention(h, h, h, need_weights=False)
-        h = h.permute(0, 2, 1).reshape(B, C, H, W)
+        h = h.permute(0, 2, 1)  # (B, C, N)
         return x + h
 
 
 class DownBlock(nn.Module):
-    """Downsampling block with residual blocks and optional attention"""
+    """Downsampling block with residual blocks and optional attention - Modified for 1D input"""
     def __init__(self, in_ch, out_ch, time_emb_dim, num_res_blocks, 
                  has_attention=False, num_heads=8, has_downsample=True):
         super().__init__()
@@ -127,9 +127,9 @@ class DownBlock(nn.Module):
             else:
                 self.attention_blocks.append(None)
         
-        # Downsampling
+        # Downsampling - using Conv1d with stride 2
         if has_downsample:
-            self.downsample = nn.Conv2d(out_ch, out_ch, 3, stride=2, padding=1)
+            self.downsample = nn.Conv1d(out_ch, out_ch, 3, stride=2, padding=1)
         else:
             self.downsample = None
     
@@ -152,7 +152,7 @@ class DownBlock(nn.Module):
 
 
 class UpBlock(nn.Module):
-    """Upsampling block with residual blocks and optional attention"""
+    """Upsampling block with residual blocks and optional attention - Modified for 1D input"""
     def __init__(self, in_ch, out_ch, time_emb_dim, num_res_blocks,
                  has_attention=False, num_heads=8, has_upsample=True):
         super().__init__()
@@ -182,14 +182,14 @@ class UpBlock(nn.Module):
         
         # Upsampling: takes in_ch input and outputs out_ch to match skip connection
         if has_upsample:
-            self.upsample = nn.ConvTranspose2d(in_ch, out_ch, 4, stride=2, padding=1)
+            self.upsample = nn.ConvTranspose1d(in_ch, out_ch, 4, stride=2, padding=1)
         else:
             self.upsample = None
     
     def forward(self, x, t_emb, skip_connection):
         """
         Args:
-            x: Current feature map
+            x: Current feature map (B, C, N)
             t_emb: Time embedding
             skip_connection: Skip connection from corresponding DownBlock
         """
@@ -201,8 +201,8 @@ class UpBlock(nn.Module):
         
         # Concatenate with skip connection
         # Handle dimension mismatch by interpolating if needed
-        if h.shape[2:] != skip_connection.shape[2:]:
-            h = F.interpolate(h, size=skip_connection.shape[2:], mode='bilinear', align_corners=False)
+        if h.shape[2] != skip_connection.shape[2]:
+            h = F.interpolate(h, size=skip_connection.shape[2], mode='linear', align_corners=False)
         
         h = torch.cat([h, skip_connection], dim=1)
         
@@ -219,6 +219,7 @@ class UNetModel(nn.Module):
     """
     Improved U-Net architecture for diffusion model
     Conditioned on timestep and optional style features
+    Modified for 1D input: (B, C, N) instead of (B, C, H, W)
     """
     def __init__(
         self,
@@ -237,14 +238,13 @@ class UNetModel(nn.Module):
             time_emb_dim = model_channels * 4
         
         self.time_embedding = TimeEmbedding(time_emb_dim)
-        # TimeEmbedding outputs time_emb_dim * 4, so we need to use that for ResBlocks
         self.time_emb_dim_output = time_emb_dim * 4
         self.num_res_blocks = num_res_blocks
         self.in_channels = in_channels
         self.out_channels = out_channels
         
-        # Input convolution
-        self.conv_in = nn.Conv2d(in_channels, model_channels, 3, padding=1)
+        # Input convolution - changed to Conv1d
+        self.conv_in = nn.Conv1d(in_channels, model_channels, 3, padding=1)
         
         # Downsampling
         self.down_blocks = nn.ModuleList()
@@ -290,19 +290,19 @@ class UNetModel(nn.Module):
             ))
             ch = out_ch
         
-        # Output
+        # Output - changed to Conv1d
         self.norm_out = nn.GroupNorm(32, ch)
-        self.conv_out = nn.Conv2d(ch, self.out_channels, 3, padding=1)
+        self.conv_out = nn.Conv1d(ch, self.out_channels, 3, padding=1)
     
     def forward(self, x, timesteps, style_condition=None):
         """
         Args:
-            x: Noisy latent (B, C, H, W)
+            x: Noisy latent (B, C, N) - 1D sequence
             timesteps: Timestep (B,) or scalar
             style_condition: Optional style conditioning (not yet implemented)
         
         Returns:
-            Predicted noise (B, C, H, W)
+            Predicted noise (B, C, N)
         """
         # Ensure timesteps is a tensor
         if not isinstance(timesteps, torch.Tensor):
@@ -330,7 +330,7 @@ class UNetModel(nn.Module):
             h = self.middle_attn(h)
         h = self.middle_res2(h, t_emb)
         
-        # Reverse skip connections for upsampling (last down block -> first up block)
+        # Reverse skip connections for upsampling
         skip_connections = skip_connections[::-1]
         
         # Upsampling
@@ -344,10 +344,10 @@ class UNetModel(nn.Module):
         
         return h
 
-
 class DiffusionModel(nn.Module):
     """
     Complete diffusion model with noise scheduling
+    Modified for 1D input: (B, C, N) instead of (B, C, H, W)
     """
     def __init__(
         self,
@@ -372,12 +372,12 @@ class DiffusionModel(nn.Module):
         self.register_buffer('sqrt_one_minus_alphas_cumprod', torch.sqrt(1.0 - self.alphas_cumprod))
     
     def add_noise(self, x0, t, noise=None):
-        """Add noise to clean image x0 at timestep t"""
+        """Add noise to clean latent x0 at timestep t - Modified for 1D input"""
         if noise is None:
             noise = torch.randn_like(x0)
         
-        sqrt_alpha_t = self.sqrt_alphas_cumprod[t].view(-1, 1, 1, 1)
-        sqrt_one_minus_alpha_t = self.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1, 1)
+        sqrt_alpha_t = self.sqrt_alphas_cumprod[t].view(-1, 1, 1)
+        sqrt_one_minus_alpha_t = self.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1)
         
         return sqrt_alpha_t * x0 + sqrt_one_minus_alpha_t * noise, noise
     
@@ -410,8 +410,8 @@ class DiffusionModel(nn.Module):
         Sample from the diffusion model (reverse process)
         
         Args:
-            shape: Shape of the latent to generate
-            style_condition: Style conditioning (B, C, H, W)
+            shape: Shape of the latent to generate (B, C, N)
+            style_condition: Style conditioning (B, C, N)
             num_inference_steps: Number of denoising steps
             init_latent: Optional initial latent to start from (e.g., fused_latent)
             t_start: Timestep to start from (if None, starts from pure noise at t=T-1)
@@ -419,7 +419,7 @@ class DiffusionModel(nn.Module):
                     Example: t_start=num_inference_steps//4 means start from 75% denoised
         
         Returns:
-            Generated latent
+            Generated latent (B, C, N)
         """
         device = next(self.parameters()).device
         

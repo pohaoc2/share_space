@@ -189,23 +189,21 @@ class StyleTransferTrainer:
                 (batch_size_effective,),
                 device=self.device
             )
-            H = W = int(math.sqrt(fused_features_cls.shape[1] / self.diffusion.unet.in_channels))
-            fused_features_cls_image = fused_features_cls.view(
+            n_patches = fused_features_patches.shape[1]
+            fused_latent_input = fused_features_patches.view(
                 batch_size_effective, 
-                self.diffusion.unet.in_channels, 
-                H, 
-                W
+                self.diffusion.unet.in_channels,
+                n_patches
             )
-            noise_target = torch.randn_like(fused_features_cls_image)
+            noise_target = torch.randn_like(fused_latent_input)
             
             # Get alpha values
-            alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
+            alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1)
             sqrt_alpha_t = torch.sqrt(alpha_t)
             sqrt_one_minus_alpha_t = torch.sqrt(1.0 - alpha_t)
             
             # Create noisy version
-            noisy_features = sqrt_alpha_t * fused_features_cls_image + sqrt_one_minus_alpha_t * noise_target
-            
+            noisy_features = sqrt_alpha_t * fused_latent_input + sqrt_one_minus_alpha_t * noise_target
             # Predict noise
             noise_pred = self.diffusion.unet(noisy_features, t)
         

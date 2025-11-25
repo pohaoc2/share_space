@@ -11,9 +11,9 @@ model:
 
 diffusion:
   unet_config: {
-    in_channels: 4, # embed_channels
-    out_channels: 4, # latent_channels
-    model_channels: 64, # diffusion_model_channels
+    in_channels: 64, # embed_channels
+    out_channels: 64, # latent_channels
+    model_channels: 128, # diffusion_model_channels
     num_res_blocks: 1,
     attention_resolutions: [2],
     channel_mult: [1, 2, 4],
@@ -47,7 +47,7 @@ training:
     save_dir: ./checkpoints/stage_2
     load_path: ./checkpoints/stage_2/best_model.pth
     eval_every: 2
-    use_diffusion: false
+    use_diffusion: true
     run_final_eval: false
     use_all_pairs: false
 # Loss Weights
@@ -55,7 +55,7 @@ loss:
   recon_weight: 1.0
   distill_weight: 1.0
   mask_weight: 1.0
-  diffusion_weight: 0.0
+  diffusion_weight: 1.0
   content_weight: 1.0
   style_weight: 1.0
   element_weight: 0.0
