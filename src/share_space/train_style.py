@@ -31,6 +31,7 @@ class StyleTransferTrainer:
                  device: str = 'cuda',
                  use_diffusion: bool = True,
                  diffusion_model: Optional[nn.Module] = None,
+                 use_all_pairs: bool = False,
                  ):
         """
         Args:
@@ -54,7 +55,7 @@ class StyleTransferTrainer:
         self.decoder = model.decoder.to(device)
         # AdaIN fusion module
         self.adain = model.adain.to(device)
-        
+        self.use_all_pairs = use_all_pairs
         # Optional diffusion model
         if use_diffusion and diffusion_model is not None:
             self.diffusion = diffusion_model.to(device)
@@ -81,7 +82,7 @@ class StyleTransferTrainer:
                     content_images: torch.Tensor,
                     style_images: torch.Tensor,
                     shuffled_style_images: torch.Tensor = None,
-                    use_all_pairs: bool = True) -> Dict[str, torch.Tensor]:
+                    ) -> Dict[str, torch.Tensor]:
         """
         Forward pass through the style transfer pipeline
         
@@ -89,7 +90,6 @@ class StyleTransferTrainer:
             content_images: Content images (B, C, H, W)
             style_images: Style images (B, C, H, W)
             shuffled_style_images: Only used for 1:1 mode
-            use_all_pairs: If True, generate all content-style pairs in batch
         
         Returns:
             Dictionary containing all intermediate outputs
@@ -105,7 +105,7 @@ class StyleTransferTrainer:
             _, style_features_cls, style_features_patches = self.extract_features(style_images)
         
         # Step 2: Fuse features using AdaIN
-        if not use_all_pairs:
+        if not self.use_all_pairs:
             # === 1:1 Pairing Mode ===
             if shuffled_style_images is not None:
                 shuffled_style_images = shuffled_style_images.float()
@@ -239,7 +239,7 @@ class StyleTransferTrainer:
                 optimizer: torch.optim.Optimizer,
                 loss_fn,
                 mask_ratio: None = None,
-                use_all_pairs: bool = True) -> Dict[str, float]:
+                ) -> Dict[str, float]:
         """
         Single training step
         
@@ -248,7 +248,6 @@ class StyleTransferTrainer:
             optimizer: Optimizer for decoder (and optionally diffusion model)
             loss_fn: Loss function
             mask_ratio: Not used in style transfer
-            use_all_pairs: If True, use all-pairs training (recommended for small datasets)
         
         Returns:
             Dictionary of loss values
@@ -270,9 +269,8 @@ class StyleTransferTrainer:
             content_images, 
             style_images, 
             shuffled_style_images,
-            use_all_pairs=use_all_pairs
         )
-        if use_all_pairs:
+        if self.use_all_pairs:
             B = style_images.shape[0]
             style_indices = []
             for i in range(B):

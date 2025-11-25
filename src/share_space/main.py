@@ -432,9 +432,10 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         device=device,
         use_diffusion=config['training'][stage_name]['use_diffusion'],
         diffusion_model=diffusion_model,
+        use_all_pairs=config['training'][stage_name]['use_all_pairs'],
     )
     optimizer = optim.AdamW(
-        list(style_model.decoder.parameters()) + (list(diffusion_model.parameters()) + list(style_model.adain.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
+        list(style_model.decoder.parameters())+ list(style_model.adain.parameters()) + (list(diffusion_model.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
         lr=config['training'][stage_name]['learning_rate'],
         weight_decay=config['training'][stage_name]['weight_decay']
     )
