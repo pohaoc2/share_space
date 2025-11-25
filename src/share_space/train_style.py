@@ -81,7 +81,7 @@ class StyleTransferTrainer:
     def forward_pass(self, 
                     content_images: torch.Tensor,
                     style_images: torch.Tensor,
-                    shuffled_style_images: torch.Tensor = None,
+                    shuffled_style_images: torch.Tensor,
                     ) -> Dict[str, torch.Tensor]:
         """
         Forward pass through the style transfer pipeline
@@ -96,25 +96,17 @@ class StyleTransferTrainer:
         """
         content_images = content_images.float()
         style_images = style_images.float()
-        
+        shuffled_style_images = shuffled_style_images.float()
         B = content_images.shape[0]
         
         # Step 1: Extract features (frozen)
         with torch.no_grad():
             _, content_features_cls, content_features_patches = self.extract_features(content_images)
-            _, style_features_cls, style_features_patches = self.extract_features(style_images)
-        
+            _, style_features_cls, style_features_patches = self.extract_features(style_images)    
+            _, shuffled_style_features_cls, shuffled_style_features_patches = self.extract_features(shuffled_style_images)
         # Step 2: Fuse features using AdaIN
         if not self.use_all_pairs:
             # === 1:1 Pairing Mode ===
-            if shuffled_style_images is not None:
-                shuffled_style_images = shuffled_style_images.float()
-                with torch.no_grad():
-                    _, shuffled_style_features_cls, shuffled_style_features_patches = self.extract_features(shuffled_style_images)
-            else:
-                shuffled_style_features_cls = style_features_cls
-                shuffled_style_features_patches = style_features_patches
-
             fused_features_patches = self.adain(content_features_patches, shuffled_style_features_patches)
             fused_features_cls = self.adain(content_features_cls, shuffled_style_features_cls)
             fused_features_cls = fused_features_cls.view(fused_features_cls.shape[0], -1)
@@ -125,6 +117,10 @@ class StyleTransferTrainer:
             # Extract features from output
             with torch.no_grad():
                 _, output_features_cls, output_features_patches = self.extract_features(output_images)
+            
+            content_features_cls_expanded = content_features_cls
+            style_features_patches_target = shuffled_style_features_patches
+            style_features_cls_target = shuffled_style_features_cls            
             n_pairs = B
             
         else:
@@ -133,22 +129,21 @@ class StyleTransferTrainer:
             
             # Expand to (B, B, N, D) for all pairs
             content_expanded = content_features_patches.unsqueeze(1).expand(-1, B, -1, -1)
-            style_expanded = style_features_patches.unsqueeze(0).expand(B, -1, -1, -1)
-            
+            shuffled_style_expanded = shuffled_style_features_patches.unsqueeze(0).expand(B, -1, -1, -1)
             # Flatten to (B*B, N, D)
             content_flat = content_expanded.reshape(B * B, N, D)
-            style_flat = style_expanded.reshape(B * B, N, D)
+            shuffled_style_flat = shuffled_style_expanded.reshape(B * B, N, D)
             
             # Apply AdaIN to all pairs at once
-            fused_features_patches = self.adain(content_flat, style_flat)
+            fused_features_patches = self.adain(content_flat, shuffled_style_flat)
             
             # Also fuse CLS tokens for all pairs
             content_cls_expanded = content_features_cls.unsqueeze(1).expand(-1, B, -1)
-            style_cls_expanded = style_features_cls.unsqueeze(0).expand(B, -1, -1)
+            shuffled_style_cls_expanded = shuffled_style_features_cls.unsqueeze(1).expand(-1, B, -1)
             
             content_cls_flat = content_cls_expanded.reshape(B * B, -1)
-            style_cls_flat = style_cls_expanded.reshape(B * B, -1)
-            fused_features_cls = self.adain(content_cls_flat, style_cls_flat)
+            shuffled_style_cls_flat = shuffled_style_cls_expanded.reshape(B * B, -1)
+            fused_features_cls = self.adain(content_cls_flat, shuffled_style_cls_flat)
             fused_features_cls = fused_features_cls.view(fused_features_cls.shape[0], -1)
             
             # Remove self-pairs (diagonal: i==j)
@@ -215,9 +210,9 @@ class StyleTransferTrainer:
             noise_pred = self.diffusion.unet(noisy_features, t)
         
         return {
-            'content_features_cls': content_features_cls,
-            'style_features_cls': style_features_cls,
-            'style_features_patches': style_features_patches,
+            'content_features_cls': content_features_cls_expanded,
+            'style_features_cls': style_features_cls_target,
+            'style_features_patches': style_features_patches_target,
             'fused_features_patches': fused_features_patches,
             'fused_features_cls': fused_features_cls,
             'output_images': output_images,
