@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 import re
 import matplotlib.pyplot as plt
-
+import copy
 class DummySimExpDataset(Dataset):
     """Dummy dataset for simulation-experimental image pairs"""
     def __init__(self, num_samples: int = 1000, img_size: int = 224, 
@@ -266,7 +266,7 @@ class SimExpPairedDataset(Dataset):
         # Load experimental image (RGB)
         exp_img = Image.open(exp_path).convert('RGB')
         exp_tensor = self.exp_transform(exp_img)  # (3, H, W), normalized to [-1, 1]
-        
+        shuffled_exp_tensor = copy.deepcopy(exp_tensor)
         # Load simulation count (grayscale, continuous [0, 1])
         sim_count = Image.open(sim_count_path).convert('RGB')
         sim_count_tensor = self.count_transform(sim_count)  # (1, H, W), normalized to [-1, 1]

@@ -270,7 +270,6 @@ class StyleTransferLoss(nn.Module):
         
         # Fused features patches loss (Eq. 11)
         losses['fused_patches'] = self.fused_patches_weight * self.fused_patches_loss(fused_features_patches, style_features_patches)
-        
         # Diffusion loss (Eq. 8) - optional
         if self.use_diffusion and noise_pred is not None and noise_target is not None:
             losses['diffusion'] = self.diffusion_weight * self.diffusion_loss(noise_pred, noise_target)

@@ -31,6 +31,7 @@ class StyleTransferTrainer:
                  device: str = 'cuda',
                  use_diffusion: bool = True,
                  diffusion_model: Optional[nn.Module] = None,
+                 use_all_pairs: bool = True,
                  ):
         """
         Args:
@@ -54,7 +55,7 @@ class StyleTransferTrainer:
         self.decoder = model.decoder.to(device)
         # AdaIN fusion module
         self.adain = model.adain.to(device)
-        
+        self.use_all_pairs = use_all_pairs
         # Optional diffusion model
         if use_diffusion and diffusion_model is not None:
             self.diffusion = diffusion_model.to(device)
@@ -80,8 +81,7 @@ class StyleTransferTrainer:
     def forward_pass(self, 
                     content_images: torch.Tensor,
                     style_images: torch.Tensor,
-                    shuffled_style_images: torch.Tensor = None,
-                    use_all_pairs: bool = True) -> Dict[str, torch.Tensor]:
+                    shuffled_style_images: torch.Tensor = None) -> Dict[str, torch.Tensor]:
         """
         Forward pass through the style transfer pipeline
         
@@ -89,7 +89,6 @@ class StyleTransferTrainer:
             content_images: Content images (B, C, H, W)
             style_images: Style images (B, C, H, W)
             shuffled_style_images: Only used for 1:1 mode
-            use_all_pairs: If True, generate all content-style pairs in batch
         
         Returns:
             Dictionary containing all intermediate outputs
@@ -105,7 +104,7 @@ class StyleTransferTrainer:
             _, style_features_cls, style_features_patches = self.extract_features(style_images)
         
         # Step 2: Fuse features using AdaIN
-        if not use_all_pairs:
+        if not self.use_all_pairs:
             # === 1:1 Pairing Mode ===
             if shuffled_style_images is not None:
                 shuffled_style_images = shuffled_style_images.float()
@@ -118,8 +117,14 @@ class StyleTransferTrainer:
             fused_features_patches = self.adain(content_features_patches, shuffled_style_features_patches)
             fused_features_cls = self.adain(content_features_cls, shuffled_style_features_cls)
             fused_features_cls = fused_features_cls.view(fused_features_cls.shape[0], -1)
-            
-            # Decode
+            if 0:
+                print(f"patches fused features: {fused_features_patches[0,0,:5]}")
+                print('='*100)
+                print(f"shuffled style features: {shuffled_style_features_patches[0,0,:5]}")
+                print('='*100)
+                print(f"patches shape: {fused_features_patches.shape}")
+                #print if style and shuffled style features are close
+                print(f"style features close to shuffled style features: {torch.allclose(style_features_patches, shuffled_style_features_patches)}")
             output_images = self.decoder(fused_features_patches)
             
             # Extract features from output
@@ -238,8 +243,7 @@ class StyleTransferTrainer:
                 batch: Dict[str, torch.Tensor],
                 optimizer: torch.optim.Optimizer,
                 loss_fn,
-                mask_ratio: None = None,
-                use_all_pairs: bool = True) -> Dict[str, float]:
+                mask_ratio: None = None) -> Dict[str, float]:
         """
         Single training step
         
@@ -248,7 +252,6 @@ class StyleTransferTrainer:
             optimizer: Optimizer for decoder (and optionally diffusion model)
             loss_fn: Loss function
             mask_ratio: Not used in style transfer
-            use_all_pairs: If True, use all-pairs training (recommended for small datasets)
         
         Returns:
             Dictionary of loss values
@@ -269,10 +272,9 @@ class StyleTransferTrainer:
         outputs = self.forward_pass(
             content_images, 
             style_images, 
-            shuffled_style_images,
-            use_all_pairs=use_all_pairs
+            shuffled_style_images
         )
-        if use_all_pairs:
+        if self.use_all_pairs:
             B = style_images.shape[0]
             style_indices = []
             for i in range(B):
@@ -298,7 +300,7 @@ class StyleTransferTrainer:
         
         # Backward pass
         optimizer.zero_grad()
-        losses['total'].backward()
+        losses['fused_patches'].backward()
         
         # Gradient clipping for stability
         torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=1.0)

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import copy
+
 
 class HistoAdaIN(nn.Module):
     """
@@ -49,7 +51,23 @@ class HistoAdaIN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(embed_dim // 2, embed_dim)
             )
-    
+
+            self.test_net = nn.Sequential(
+                nn.Linear(embed_dim, embed_dim),
+                nn.Linear(embed_dim, embed_dim)
+            )
+            if 0:
+                nn.init.eye_(self.test_net[0].weight)
+                self.test_net[0].weight.data += torch.randn_like(self.test_net[0].weight) * 0.01
+                nn.init.zeros_(self.test_net[0].bias)
+
+                # Second layer close to identity  
+                nn.init.eye_(self.test_net[1].weight)
+                self.test_net[1].weight.data += torch.randn_like(self.test_net[1].weight) * 0.01
+                nn.init.zeros_(self.test_net[1].bias)
+            self.weight_net = nn.Linear(embed_dim, embed_dim)
+            self.weight_net2 = self.test_net
+
     def forward(self, content_features, style_features):
         """
         Args:
@@ -102,10 +120,10 @@ class HistoAdaIN(nn.Module):
                 style_std = style_features.std(dim=1, keepdim=True, unbiased=False) + self.eps
                 gamma = style_std
                 beta = style_mean
-        
         # === 3. Apply style transfer ===
-        fused_features = content_normalized * gamma + beta
-        
+        #fused_features = content_normalized * gamma + beta
+        fused_features = self.weight_net2(style_features) + self.weight_net(content_features)*0
+        #fused_features = style_features
         return fused_features
 
 

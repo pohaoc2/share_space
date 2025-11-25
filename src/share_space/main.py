@@ -432,6 +432,7 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         device=device,
         use_diffusion=config['training'][stage_name]['use_diffusion'],
         diffusion_model=diffusion_model,
+        use_all_pairs=config['training'][stage_name]['use_all_pairs']
     )
     optimizer = optim.AdamW(
         list(style_model.decoder.parameters()) + (list(diffusion_model.parameters()) + list(style_model.adain.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
@@ -649,50 +650,52 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
         ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
         ax[i].axis('off')
         ax[i].set_title(f'{i * 25}% Sim + {100 - i * 25}% Exp')
-    exp_idx = 5
+    
     # fit the exp distribution and sample from it
     # Convert to numpy and get the shape
-    exp_patch_tokens_np = exp_patch_tokens.cpu().detach().numpy()
-    B, num_patches, embed_dim = exp_patch_tokens_np.shape
-    
-    # Fit a separate multivariate Gaussian distribution for each patch position
-    patch_means = []
-    patch_covs = []
-    
-    for patch_idx in range(num_patches):
-        # Collect all tokens for this patch position across all batches
-        # Shape: (B, embed_dim)
-        patch_tokens = exp_patch_tokens_np[:, patch_idx, :]
+    if 0:
+        exp_patch_tokens_np = exp_patch_tokens.cpu().detach().numpy()
+        B, num_patches, embed_dim = exp_patch_tokens_np.shape
         
-        # Fit multivariate Gaussian for this patch position
-        mean = np.mean(patch_tokens, axis=0)  # (embed_dim,)
-        cov = np.cov(patch_tokens.T)  # (embed_dim, embed_dim)
+        # Fit a separate multivariate Gaussian distribution for each patch position
+        patch_means = []
+        patch_covs = []
         
-        # Add small regularization to ensure covariance is positive definite
-        cov += np.eye(embed_dim) * 1e-6
+        for patch_idx in range(num_patches):
+            # Collect all tokens for this patch position across all batches
+            # Shape: (B, embed_dim)
+            patch_tokens = exp_patch_tokens_np[:, patch_idx, :]
+            
+            # Fit multivariate Gaussian for this patch position
+            mean = np.mean(patch_tokens, axis=0)  # (embed_dim,)
+            cov = np.cov(patch_tokens.T)  # (embed_dim, embed_dim)
+            
+            # Add small regularization to ensure covariance is positive definite
+            cov += np.eye(embed_dim) * 1e-6
+            
+            patch_means.append(mean)
+            patch_covs.append(cov)
         
-        patch_means.append(mean)
-        patch_covs.append(cov)
-    
-    # Sample from each patch's distribution with the same shape as exp_patch_tokens
-    sampled_patch_tokens = np.zeros((B, num_patches, embed_dim))
-    for patch_idx in range(num_patches):
-        # Sample B vectors from this patch's distribution
-        sampled_patch_tokens[:, patch_idx, :] = np.random.multivariate_normal(
-            patch_means[patch_idx], 
-            patch_covs[patch_idx], 
-            size=B
-        )
-    
-    sampled_patch_tokens = torch.from_numpy(sampled_patch_tokens).float().to(device)
-    
-    for i in range(5):
-        # Use the sampled patch tokens (you can index by i if you want different samples)
-        fused_patches = sampled_patch_tokens[i:i+1] if i < B else sampled_patch_tokens[0:1]
-        pred_fused_recon = model.decoder(fused_patches.to(device))[0]
-        ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
-        ax[i].axis('off')
-        #ax[i].set_title(f'Sample from Exp Distribution')
+        # Sample from each patch's distribution with the same shape as exp_patch_tokens
+        sampled_patch_tokens = np.zeros((B, num_patches, embed_dim))
+        for patch_idx in range(num_patches):
+            # Sample B vectors from this patch's distribution
+            sampled_patch_tokens[:, patch_idx, :] = np.random.multivariate_normal(
+                patch_means[patch_idx], 
+                patch_covs[patch_idx], 
+                size=B
+            )
+        
+        sampled_patch_tokens = torch.from_numpy(sampled_patch_tokens).float().to(device)
+        
+        for i in range(5):
+            # Use the sampled patch tokens (you can index by i if you want different samples)
+            fused_patches = sampled_patch_tokens[i:i+1] if i < B else sampled_patch_tokens[0:1]
+            pred_fused_recon = model.decoder(fused_patches.to(device))[0]
+            ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
+            ax[i].axis('off')
+
+    exp_idx = 5
     for i in range(0):
         #fused_patches = i * 0.25 * exp_patch_tokens[exp_idx:exp_idx+1] + (4 - i) * 0.25 * exp_patch_tokens[exp_idx+1:exp_idx+2]
         #pred_fused_recon = model.decoder(random_fused_patches.to(device))[0]
