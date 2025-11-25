@@ -49,7 +49,7 @@ training:
     eval_every: 2
     use_diffusion: false
     run_final_eval: false
-    use_all_pairs: true
+    use_all_pairs: false
 # Loss Weights
 loss:
   recon_weight: 1.0

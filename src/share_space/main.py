@@ -434,11 +434,26 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         diffusion_model=diffusion_model,
         use_all_pairs=config['training'][stage_name]['use_all_pairs'],
     )
-    optimizer = optim.AdamW(
-        list(style_model.decoder.parameters())+ list(style_model.adain.parameters()) + (list(diffusion_model.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
-        lr=config['training'][stage_name]['learning_rate'],
-        weight_decay=config['training'][stage_name]['weight_decay']
-    )
+    param_groups = [
+        {
+            'params': style_model.decoder.parameters(),
+            'lr': config['training'][stage_name]['learning_rate']*0.01,
+            'weight_decay': config['training'][stage_name]['weight_decay'],
+        },
+        {
+            'params': style_model.adain.parameters(),
+            'lr': config['training'][stage_name]['learning_rate'],
+            'weight_decay': config['training'][stage_name]['weight_decay'],
+        }
+    ]
+
+    optimizer = optim.AdamW(param_groups)
+    if 0:
+        optimizer = optim.AdamW(
+            list(style_model.decoder.parameters())+ list(style_model.adain.parameters()) + (list(diffusion_model.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
+            lr=config['training'][stage_name]['learning_rate'],
+            weight_decay=config['training'][stage_name]['weight_decay']
+        )
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
         T_max=config['training'][stage_name]['epochs'],
