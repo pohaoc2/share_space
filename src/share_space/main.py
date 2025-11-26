@@ -23,7 +23,7 @@ import os
 import torch.nn.functional as F
 import numpy as np
 from sklearn.decomposition import PCA
-
+from share_space.evaluation import frechet_permutation_test, frechet_distance
 state_names = {
     0: 'Cell Count',
     # 1: 'OTHER',
@@ -226,18 +226,19 @@ def visualize_pca(*feature_sets, save_dir, labels=None, colors=None, markers=Non
             )
     
     # Plot first sample of each set (filled markers with black edge)
+    sample_idx = 3
     for i, (label, color, marker) in enumerate(zip(labels, colors, markers)):
         latents = latents_pca_np[label]
         if len(latents) > 0:
             ax.scatter(
-                latents[0:1, 0], latents[0:1, 1],
+                latents[sample_idx:sample_idx+1, 0], latents[sample_idx:sample_idx+1, 1],
                 facecolors=color, edgecolors='black', marker=marker, s=70, zorder=5
             )
     
     # Draw lines connecting the first samples (only if we have exactly 2 feature sets)
     if len(feature_sets) == 2:
-        x0, y0 = latents_pca_np[labels[0]][0, 0], latents_pca_np[labels[0]][0, 1]
-        x1, y1 = latents_pca_np[labels[1]][0, 0], latents_pca_np[labels[1]][0, 1]
+        x0, y0 = latents_pca_np[labels[0]][sample_idx:sample_idx+1, 0], latents_pca_np[labels[0]][sample_idx:sample_idx+1, 1]
+        x1, y1 = latents_pca_np[labels[1]][sample_idx:sample_idx+1, 0], latents_pca_np[labels[1]][sample_idx:sample_idx+1, 1]
         ax.plot([x0, x1], [y0, y1], 'k--', alpha=0.5, linewidth=1.5)
         
         # Add crosses at 25%, 50%, 75% along the line
@@ -290,14 +291,21 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
         
         if verbose:
             print("Collecting latents from all validation samples...")
-        
+        all_content_patches = []
+        all_style_patches = []
+        all_sim = []
+        all_exp = []
         for batch in val_loader:
             recon_sim, content_features_cls, content_features_patches = model(batch['simulation'].to(device))
             recon_exp, style_features_cls, style_features_patches = model(batch['experimental'].to(device))
             #content_features_patches = content_features_patches.view(content_features_patches.shape[0], -1)
             #style_features_patches = style_features_patches.view(style_features_patches.shape[0], -1)
+            all_sim.append(batch['simulation'].cpu())
+            all_exp.append(batch['experimental'].cpu())
             all_content_latents.append(content_features_cls.cpu())
             all_style_latents.append(style_features_cls.cpu())
+            all_content_patches.append(content_features_patches.cpu())
+            all_style_patches.append(style_features_patches.cpu())
             if 0:
                 fig, ax = plt.subplots(2, 2, figsize=(10, 5))
                 ax[0, 0].imshow(inverse_transform(batch['simulation'][1].permute(1, 2, 0).cpu().numpy()))
@@ -318,6 +326,10 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
         # Concatenate all batches
         content_features_cls = torch.cat(all_content_latents, dim=0)  # [N, D]
         style_features_cls = torch.cat(all_style_latents, dim=0)  # [N, D]
+        all_sim = torch.cat(all_sim, dim=0).permute(0, 2, 3, 1)  # [B, N, D]
+        all_exp = torch.cat(all_exp, dim=0).permute(0, 2, 3, 1)  # [B, N, D]
+        all_content_patches = torch.cat(all_content_patches, dim=0)  # [B, N, D]
+        all_style_patches = torch.cat(all_style_patches, dim=0)  # [B, N, D]
         results = {}
         if verbose:
             print(f"Total samples - content_features_cls: {content_features_cls.shape}, style_features_cls: {style_features_cls.shape}")
@@ -325,6 +337,72 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
         # Normalize features for cosine similarity (L2 normalize)
             content_norm = F.normalize(content_features_cls, p=2, dim=-1)
             style_norm = F.normalize(style_features_cls, p=2, dim=-1)
+
+            dist, pval = frechet_permutation_test(content_norm.cpu().numpy(), style_norm.cpu().numpy())
+            print(f"Frechet distance: {dist}")
+            print(f"Frechet permutation test p-value: {pval}")
+
+            # Create figure with gridspec for custom layout
+            if 0:
+                fig = plt.figure(figsize=(16, 8))
+                gs = fig.add_gridspec(2, 4, height_ratios=[1, 1], hspace=0.3)
+
+                # Top: bar plot spanning both columns
+                ax_bar = fig.add_subplot(gs[0, :])
+
+                # Get the number of features
+                n_features = content_features_cls.shape[1]
+                sample_idx = 3
+
+                # Get the content and style feature arrays
+                content_values = content_features_cls[sample_idx, :].cpu().numpy()
+                style_values = style_features_cls[sample_idx, :].cpu().numpy()
+                
+                # Sort by content_values (you can easily swap for style_values)
+                sort_indices = np.argsort(content_values)
+                content_values_sorted = content_values[sort_indices]
+                style_values_sorted = style_values[sort_indices]
+                x = np.arange(n_features)
+                width = 0.35
+
+                # Create bars for sorted values, side by side
+                bars1 = ax_bar.bar(x - width/2, content_values_sorted, width, label='Sim')
+                bars2 = ax_bar.bar(x + width/2, style_values_sorted, width, label='Exp')
+
+                ax_bar.set_xlabel('Feature Index')
+                ax_bar.set_ylabel('Value')
+                ax_bar.set_title('Sim vs Exp Features')
+                ax_bar.set_xticks([i for i in x if i%2 == 0])
+                ax_bar.legend()
+
+                # Bottom: reconstructed images
+                recon_sim = model.decoder(all_content_patches[sample_idx:sample_idx+1].to(device))
+                recon_exp = model.decoder(all_style_patches[sample_idx:sample_idx+1].to(device))
+
+
+                ax_sim = fig.add_subplot(gs[1, 0])
+                ax_sim.imshow(all_sim[sample_idx])
+                ax_sim.axis('off')
+                ax_sim.set_title('Simulation')
+
+                ax_sim = fig.add_subplot(gs[1, 1])
+                ax_sim.imshow(inverse_transform(recon_sim[0].permute(1, 2, 0).cpu().detach().numpy()))
+                ax_sim.axis('off')
+                ax_sim.set_title('Reconstructed Simulation')
+
+                ax_exp = fig.add_subplot(gs[1, 2])
+                ax_exp.imshow(all_exp[sample_idx])
+                ax_exp.axis('off')
+                ax_exp.set_title('Experiment')
+                ax_exp = fig.add_subplot(gs[1, 3])
+                ax_exp.imshow(inverse_transform(recon_exp[0].permute(1, 2, 0).cpu().detach().numpy()))
+                ax_exp.axis('off')
+                ax_exp.set_title('Reconstructed Experiment')
+
+                plt.tight_layout()
+                plt.savefig(Path(save_dir) / f'feature_comparison.png', dpi=300, bbox_inches='tight')
+                plt.show()
+                asd()
             # Convert to probability distributions for KL divergence (using softmax)
             content_probs = F.softmax(content_features_cls, dim=-1)
             style_probs = F.softmax(style_features_cls, dim=-1)
@@ -397,7 +475,80 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
                 print(f"  content[i] vs content[j] (within-group): {results['kl_divergence']['content_within']:.6f}")
                 print(f"  style[i] vs style[j] (within-group): {results['kl_divergence']['style_within']:.6f}")
                 print("=" * 60)
-        
+        if 0: # experiment permutation test -- randomly shuffle the content and style features pairs
+            content_features_cls_permuted = content_features_cls.clone()
+            style_features_cls_permuted = style_features_cls.clone()
+            # Apply DIFFERENT permutations to break the pairing
+            perm_content = torch.randperm(content_features_cls.shape[0])
+            perm_style = torch.randperm(style_features_cls.shape[0])
+            content_features_cls_permuted = content_features_cls_permuted[perm_content]
+            style_features_cls_permuted = style_features_cls_permuted[perm_style]
+            
+            # Normalize permuted features for cosine similarity
+            content_norm_permuted = F.normalize(content_features_cls_permuted, p=2, dim=-1)
+            style_norm_permuted = F.normalize(style_features_cls_permuted, p=2, dim=-1)
+            
+            # Convert permuted features to probability distributions for KL divergence
+            content_probs_permuted = F.softmax(content_features_cls_permuted, dim=-1)
+            style_probs_permuted = F.softmax(style_features_cls_permuted, dim=-1)
+            content_log_probs_permuted = F.log_softmax(content_features_cls_permuted, dim=-1)
+            style_log_probs_permuted = F.log_softmax(style_features_cls_permuted, dim=-1)
+            
+            # ========== Cosine Similarity (Permuted) ==========
+            # Between content[i] and style[i] (paired, permuted)
+            content_style_cosine_paired_permuted = F.cosine_similarity(content_norm_permuted, style_norm_permuted, dim=-1).mean()
+            
+            # Within content group: content[i] vs content[j] (all pairs, permuted)
+            content_cosine_permuted = torch.matmul(content_norm_permuted, content_norm_permuted.t())  # [B, B]
+            mask_content_permuted = torch.triu(torch.ones_like(content_cosine_permuted), diagonal=1).bool()
+            content_only_cosine_permuted = content_cosine_permuted[mask_content_permuted].mean()
+            
+            # Within style group: style[i] vs style[j] (all pairs, permuted)
+            style_cosine_permuted = torch.matmul(style_norm_permuted, style_norm_permuted.t())  # [B, B]
+            mask_style_permuted = torch.triu(torch.ones_like(style_cosine_permuted), diagonal=1).bool()
+            style_only_cosine_permuted = style_cosine_permuted[mask_style_permuted].mean()
+            
+            # ========== KL Divergence (Permuted) ==========
+            # Between content[i] and style[i] (paired, permuted)
+            content_style_kl_paired_permuted = F.kl_div(
+                content_log_probs_permuted,
+                style_probs_permuted,
+                reduction='batchmean'
+            )
+            
+            # Within content group: content[i] vs content[j] (all pairs, permuted)
+            content_probs_expanded_permuted = content_probs_permuted.unsqueeze(1)  # [B, 1, D]
+            content_log_diff_permuted = content_log_probs_permuted.unsqueeze(1) - content_log_probs_permuted.unsqueeze(0)  # [B, B, D]
+            content_kl_matrix_permuted = (content_probs_expanded_permuted * content_log_diff_permuted).sum(dim=-1)  # [B, B]
+            mask_content_kl_permuted = torch.triu(torch.ones_like(content_kl_matrix_permuted), diagonal=1).bool()
+            content_only_kl_permuted = content_kl_matrix_permuted[mask_content_kl_permuted].mean()
+            
+            # Within style group: style[i] vs style[j] (all pairs, permuted)
+            style_probs_expanded_permuted = style_probs_permuted.unsqueeze(1)  # [B, 1, D]
+            style_log_diff_permuted = style_log_probs_permuted.unsqueeze(1) - style_log_probs_permuted.unsqueeze(0)  # [B, B, D]
+            style_kl_matrix_permuted = (style_probs_expanded_permuted * style_log_diff_permuted).sum(dim=-1)  # [B, B]
+            mask_style_kl_permuted = torch.triu(torch.ones_like(style_kl_matrix_permuted), diagonal=1).bool()
+            style_only_kl_permuted = style_kl_matrix_permuted[mask_style_kl_permuted].mean()
+            
+            results['cosine_similarity']['content_style_paired_permuted'] = content_style_cosine_paired_permuted.item()
+            results['cosine_similarity']['content_within_permuted'] = content_only_cosine_permuted.item()
+            results['cosine_similarity']['style_within_permuted'] = style_only_cosine_permuted.item()
+            results['kl_divergence']['content_style_paired_permuted'] = content_style_kl_paired_permuted.item()
+            results['kl_divergence']['content_within_permuted'] = content_only_kl_permuted.item()
+            results['kl_divergence']['style_within_permuted'] = style_only_kl_permuted.item()
+            print("=" * 60)
+            print("COSINE SIMILARITY PERMUTED:")
+            print(f"  content[i] vs style[i] (paired): {results['cosine_similarity']['content_style_paired_permuted']:.6f}")
+            print(f"  content[i] vs content[j] (within-group): {results['cosine_similarity']['content_within_permuted']:.6f}")
+            print(f"  style[i] vs style[j] (within-group): {results['cosine_similarity']['style_within_permuted']:.6f}")
+            print("=" * 60)
+            print("KL DIVERGENCE PERMUTED:")
+            print(f"  content[i] vs style[i] (paired): {results['kl_divergence']['content_style_paired_permuted']:.6f}")
+            print(f"  content[i] vs content[j] (within-group): {results['kl_divergence']['content_within_permuted']:.6f}")
+            print(f"  style[i] vs style[j] (within-group): {results['kl_divergence']['style_within_permuted']:.6f}")
+            print("=" * 60)
+            asd()
+
         # ========== PCA Visualization ==========
         pca_results = visualize_pca(
             content_features_cls, 
@@ -624,6 +775,7 @@ def main(config_path='config.yaml'):
     )
     # Compute feature similarity metrics
     metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    asd()
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,

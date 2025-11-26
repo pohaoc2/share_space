@@ -9,6 +9,60 @@ from typing import Tuple
 from tqdm import tqdm
 import copy
 
+def frechet_distance(mu1, cov1, mu2, cov2, eps=1e-6):
+    """Fréchet distance between two Gaussians (vectors: mu, cov)."""
+    mu1 = np.atleast_1d(mu1)
+    mu2 = np.atleast_1d(mu2)
+    cov1 = np.atleast_2d(cov1)
+    cov2 = np.atleast_2d(cov2)
+    diff = mu1 - mu2
+    # sqrt of product might be numerical; add eps to diag
+    cov_prod_sqrt, info = None, None
+    try:
+        cov_prod_sqrt = linalg.sqrtm(cov1.dot(cov2))
+    except Exception:
+        cov_prod_sqrt = None
+
+    if np.iscomplexobj(cov_prod_sqrt):
+        # numerical noise -> take real part
+        cov_prod_sqrt = cov_prod_sqrt.real
+
+    # If still has NaNs or so, regularize covariances
+    if cov_prod_sqrt is None or not np.isfinite(cov_prod_sqrt).all():
+        cov1 += np.eye(cov1.shape[0]) * eps
+        cov2 += np.eye(cov2.shape[0]) * eps
+        cov_prod_sqrt = linalg.sqrtm(cov1.dot(cov2)).real
+
+    tr_term = np.trace(cov1 + cov2 - 2.0 * cov_prod_sqrt)
+    return float(diff.dot(diff) + tr_term)
+
+def compute_frechet_from_samples(X, Y, eps=1e-6):
+    """
+    X, Y: arrays shape (N, D) and (M, D)
+    """
+    muX = np.mean(X, axis=0)
+    muY = np.mean(Y, axis=0)
+    covX = np.cov(X, rowvar=False)
+    covY = np.cov(Y, rowvar=False)
+    return frechet_distance(muX, covX, muY, covY, eps=eps)
+
+def frechet_permutation_test(X, Y, n_perms=200, seed=0):
+    np.random.seed(seed)
+    combined = np.vstack([X, Y])
+    n = X.shape[0]
+    obs = compute_frechet_from_samples(X, Y)
+    count = 0
+    for _ in range(n_perms):
+        perm = np.random.permutation(combined.shape[0])
+        A = combined[perm[:n]]
+        B = combined[perm[n:]]
+        val = compute_frechet_from_samples(A, B)
+        if val >= obs:
+            count += 1
+    pval = (count + 1) / (n_perms + 1)
+    return obs, pval
+
+
 
 class FIDScore:
     """Frechet Inception Distance for evaluating image quality"""
