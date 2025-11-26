@@ -119,8 +119,8 @@ class StyleTransferTrainer:
                 _, output_features_cls, output_features_patches = self.extract_features(output_images)
             
             content_features_cls_expanded = content_features_cls
-            style_features_patches_target = shuffled_style_features_patches
-            style_features_cls_target = shuffled_style_features_cls            
+            style_features_patches_target = style_features_patches
+            style_features_cls_target = style_features_cls            
             n_pairs = B
             
         else:

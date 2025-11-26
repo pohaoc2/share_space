@@ -37,8 +37,8 @@ training:
     eval_every: 5
     run_final_eval: false
   stage_2:
-    eval_only: false
-    epochs: 1
+    eval_only: True
+    epochs: 2
     learning_rate: 0.001
     weight_decay: 0.05
     teacher_momentum: 0.996
@@ -47,7 +47,7 @@ training:
     save_dir: ./checkpoints/stage_2
     load_path: ./checkpoints/stage_2/best_model.pth
     eval_every: 2
-    use_diffusion: true
+    use_diffusion: false
     run_final_eval: false
     use_all_pairs: false
 # Loss Weights
@@ -56,7 +56,7 @@ loss:
   distill_weight: 1.0
   mask_weight: 1.0
   diffusion_weight: 1.0
-  content_weight: 1.0
+  content_weight: 0.0
   style_weight: 1.0
   element_weight: 0.0
   image_weight: 1.0

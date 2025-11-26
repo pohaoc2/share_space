@@ -16,7 +16,7 @@ import copy
 from share_space.diffusion import DiffusionModel
 from share_space.trainer_diffusion import LatentDiffusionTrainer
 from share_space.models.adain import AdaINFusion#, HistoAdaIN
-from share_space.adain_histo import HistoAdaINSpatialAware, HistoAdaIN, HistoAdaINHybrid
+from share_space.adain_histo import HistoAdaINSpatialAware, HistoAdaIN, HistoAdaINHybrid, WeightedAdaIN, LearnableAdaIN
 from share_space.latent_adapter import LatentDomainAdapter
 from share_space.latent_adapter import train_epoch as train_latent_adapter_epoch
 import os
@@ -139,6 +139,134 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
     
     return best_psnr, loss_history
 
+def visualize_pca(*feature_sets, save_dir, labels=None, colors=None, markers=None):
+    """
+    Create PCA visualization of multiple feature sets.
+    
+    Args:
+        *feature_sets: Variable number of feature tensors, each of shape [N, D]
+        save_dir: Directory to save the visualization
+        labels: Optional list of labels for each feature set. If None, uses default labels.
+        colors: Optional list of colors for each feature set. If None, uses default colors.
+        markers: Optional list of markers for each feature set. If None, uses default markers.
+    
+    Returns:
+        Dictionary containing PCA results:
+        - explained_variance_ratio: List of explained variance ratios
+        - latents_pca: Dictionary mapping feature set index/label to PCA-projected latents
+    
+    Examples:
+        # Two feature sets (content and style)
+        visualize_pca(content_features_cls, style_features_cls, save_dir=save_dir)
+        
+        # Three feature sets (content, style, reconstructed)
+        visualize_pca(content_features_cls, style_features_cls, reconstructed_features_cls, 
+                     save_dir=save_dir, labels=['Content', 'Style', 'Reconstructed'])
+    """
+    if len(feature_sets) == 0:
+        raise ValueError("At least one feature set must be provided")
+    
+    # Default styling
+    default_labels = ['Feature Set 1', 'Feature Set 2', 'Feature Set 3', 'Feature Set 4', 'Feature Set 5']
+    default_colors = ['blue', 'red', 'green', 'orange', 'purple']
+    default_markers = ['o', 's', '^', 'D', 'v']
+    
+    if labels is None:
+        labels = default_labels[:len(feature_sets)]
+    if colors is None:
+        colors = default_colors[:len(feature_sets)]
+    if markers is None:
+        markers = default_markers[:len(feature_sets)]
+    
+    # Ensure we have enough labels, colors, and markers
+    while len(labels) < len(feature_sets):
+        labels.append(default_labels[len(labels)])
+    while len(colors) < len(feature_sets):
+        colors.append(default_colors[len(colors)])
+    while len(markers) < len(feature_sets):
+        markers.append(default_markers[len(markers)])
+    
+    # Convert all features to numpy and combine for PCA fitting
+    feature_arrays = []
+    for features in feature_sets:
+        if isinstance(features, torch.Tensor):
+            feature_arrays.append(features.numpy())
+        else:
+            feature_arrays.append(features)
+    
+    all_latents = np.vstack(feature_arrays)  # [Total_N, D]
+    
+    # Fit PCA on combined latents
+    pca = PCA(n_components=2)
+    pca.fit(all_latents)
+    
+    # Project all feature sets to PCA space
+    latents_pca = {}
+    latents_pca_np = {}
+    for i, (features_np, label) in enumerate(zip(feature_arrays, labels)):
+        latents_pca_np[label] = pca.transform(features_np)  # [N, 2]
+        latents_pca[label] = latents_pca_np[label].tolist()
+    
+    # Create scatter plot
+    fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
+    
+    # Plot all samples except first (hollow markers)
+    for i, (label, color, marker) in enumerate(zip(labels, colors, markers)):
+        latents = latents_pca_np[label]
+        if len(latents) > 1:
+            ax.scatter(
+                latents[1:, 0], latents[1:, 1],
+                facecolors='none', edgecolors=color, marker=marker, label=label, s=40
+            )
+        elif len(latents) == 1:
+            # If only one sample, plot it as filled
+            ax.scatter(
+                latents[0:1, 0], latents[0:1, 1],
+                facecolors=color, edgecolors='black', marker=marker, label=label, s=70
+            )
+    
+    # Plot first sample of each set (filled markers with black edge)
+    for i, (label, color, marker) in enumerate(zip(labels, colors, markers)):
+        latents = latents_pca_np[label]
+        if len(latents) > 0:
+            ax.scatter(
+                latents[0:1, 0], latents[0:1, 1],
+                facecolors=color, edgecolors='black', marker=marker, s=70, zorder=5
+            )
+    
+    # Draw lines connecting the first samples (only if we have exactly 2 feature sets)
+    if len(feature_sets) == 2:
+        x0, y0 = latents_pca_np[labels[0]][0, 0], latents_pca_np[labels[0]][0, 1]
+        x1, y1 = latents_pca_np[labels[1]][0, 0], latents_pca_np[labels[1]][0, 1]
+        ax.plot([x0, x1], [y0, y1], 'k--', alpha=0.5, linewidth=1.5)
+        
+        # Add crosses at 25%, 50%, 75% along the line
+        for frac in [0.25, 0.5, 0.75]:
+            xc = x0 + (x1 - x0) * frac
+            yc = y0 + (y1 - y0) * frac
+            ax.scatter(xc, yc, marker='x', color='gray', s=60, linewidths=2, zorder=10)
+    
+    ax.set_xlabel(f'PC1 (Explained Variance: {pca.explained_variance_ratio_[0]:.2%})', fontsize=12)
+    ax.set_ylabel(f'PC2 (Explained Variance: {pca.explained_variance_ratio_[1]:.2%})', fontsize=12)
+    ax.legend(loc='best', fontsize=10)
+    plt.tight_layout()
+    os.makedirs(save_dir, exist_ok=True)
+    plt.savefig(Path(save_dir) / f'pca_visualization.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    # Return PCA results
+    result = {
+        'explained_variance_ratio': pca.explained_variance_ratio_.tolist(),
+        'latents_pca': latents_pca
+    }
+    
+    # Backward compatibility: add old keys for 2-feature case
+    if len(feature_sets) == 2:
+        result['content_latents_pca'] = latents_pca[labels[0]]
+        result['style_latents_pca'] = latents_pca[labels[1]]
+    
+    return result
+
 def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verbose=True):
     """
     Compute cosine similarity and KL divergence metrics between content and style features.
@@ -164,13 +292,29 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
             print("Collecting latents from all validation samples...")
         
         for batch in val_loader:
-            _, content_features_cls, content_features_patches = model(batch['simulation'].to(device))
-            _, style_features_cls, style_features_patches = model(batch['experimental'].to(device))
-            content_features_patches = content_features_patches.view(content_features_patches.shape[0], -1)
-            style_features_patches = style_features_patches.view(style_features_patches.shape[0], -1)
-            all_content_latents.append(content_features_patches.cpu())
-            all_style_latents.append(style_features_patches.cpu())
-        
+            recon_sim, content_features_cls, content_features_patches = model(batch['simulation'].to(device))
+            recon_exp, style_features_cls, style_features_patches = model(batch['experimental'].to(device))
+            #content_features_patches = content_features_patches.view(content_features_patches.shape[0], -1)
+            #style_features_patches = style_features_patches.view(style_features_patches.shape[0], -1)
+            all_content_latents.append(content_features_cls.cpu())
+            all_style_latents.append(style_features_cls.cpu())
+            if 0:
+                fig, ax = plt.subplots(2, 2, figsize=(10, 5))
+                ax[0, 0].imshow(inverse_transform(batch['simulation'][1].permute(1, 2, 0).cpu().numpy()))
+                ax[0, 1].imshow(inverse_transform(batch['experimental'][1].permute(1, 2, 0).cpu().numpy()))
+                ax[1, 0].imshow(inverse_transform(recon_sim[1].permute(1, 2, 0).cpu().numpy()))
+                ax[1, 1].imshow(inverse_transform(recon_exp[1].permute(1, 2, 0).cpu().numpy()))
+                ax[0, 0].axis('off')
+                ax[0, 1].axis('off')
+                ax[1, 0].axis('off')
+                ax[1, 1].axis('off')
+                ax[0, 0].set_title('Simulation')
+                ax[0, 1].set_title('Experimental')
+                ax[1, 0].set_title('Reconstructed Simulation')
+                ax[1, 1].set_title('Reconstructed Experimental')
+                plt.show()
+                asd()
+            
         # Concatenate all batches
         content_features_cls = torch.cat(all_content_latents, dim=0)  # [N, D]
         style_features_cls = torch.cat(all_style_latents, dim=0)  # [N, D]
@@ -181,7 +325,6 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
         # Normalize features for cosine similarity (L2 normalize)
             content_norm = F.normalize(content_features_cls, p=2, dim=-1)
             style_norm = F.normalize(style_features_cls, p=2, dim=-1)
-            
             # Convert to probability distributions for KL divergence (using softmax)
             content_probs = F.softmax(content_features_cls, dim=-1)
             style_probs = F.softmax(style_features_cls, dim=-1)
@@ -256,70 +399,13 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
                 print("=" * 60)
         
         # ========== PCA Visualization ==========
-        # 1. Convert images to latents (already have all content_features_cls and style_features_cls)
-        # 2. Project them into the same PCA domain
-        # Combine all latents for PCA fitting
-        content_latents_np = content_features_cls.numpy()  # [N, D]
-        style_latents_np = style_features_cls.numpy()  # [N, D]
-        all_latents = np.vstack([content_latents_np, style_latents_np])  # [2*N, D]
-        
-        # Fit PCA on combined latents
-        pca = PCA(n_components=2)
-        pca.fit(all_latents)
-        
-        # Project both content and style latents to PCA space
-        content_latents_pca = pca.transform(content_latents_np)  # [N, 2]
-        style_latents_pca = pca.transform(style_latents_np)  # [N, 2]
-        
-        # 3. Scatter plot
-        fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
-        
-        ax.scatter(
-            content_latents_pca[1:, 0], content_latents_pca[1:, 1],
-            facecolors='none', edgecolors='blue', marker='o', label='Simulation', s=40
+        pca_results = visualize_pca(
+            content_features_cls, 
+            style_features_cls, 
+            save_dir=save_dir,
+            labels=['Simulation', 'Experiment']
         )
-
-        ax.scatter(
-            style_latents_pca[1:, 0], style_latents_pca[1:, 1],
-            facecolors='none', edgecolors='red', marker='s', label='Experiment', s=40
-        )
-
-        # ---- Plot FIRST sample (filled markers) ----
-        ax.scatter(
-            content_latents_pca[0:1, 0], content_latents_pca[0:1, 1],
-            facecolors='blue', edgecolors='black', marker='o', s=70,
-        )
-
-        ax.scatter(
-            style_latents_pca[0:1, 0], style_latents_pca[0:1, 1],
-            facecolors='red', edgecolors='black', marker='s', s=70,
-        )
-        
-        # Draw a line connecting the first pair
-        x0, y0 = content_latents_pca[0, 0], content_latents_pca[0, 1]
-        x1, y1 = style_latents_pca[0, 0], style_latents_pca[0, 1]
-        ax.plot([x0, x1], [y0, y1], 'k--', alpha=0.5, linewidth=1.5)
-
-        # Add crosses at 25%, 50%, 75% along the line
-        for frac in [0.25, 0.5, 0.75]:
-            xc = x0 + (x1 - x0) * frac
-            yc = y0 + (y1 - y0) * frac
-            ax.scatter(xc, yc, marker='x', color='gray', s=60, linewidths=2, zorder=10)
-        ax.set_xlabel(f'PC1 (Explained Variance: {pca.explained_variance_ratio_[0]:.2%})', fontsize=12)
-        ax.set_ylabel(f'PC2 (Explained Variance: {pca.explained_variance_ratio_[1]:.2%})', fontsize=12)
-        ax.legend(loc='best', fontsize=10)
-        #ax.grid(True, alpha=0.3)
-        plt.tight_layout()
-        if os.path.exists(save_dir):
-            os.makedirs(save_dir, exist_ok=True)
-        plt.savefig(Path(save_dir) / f'pca_visualization.png', dpi=300, bbox_inches='tight')
-        plt.show()
-        # Add PCA results to return dictionary
-        results['pca'] = {
-            'explained_variance_ratio': pca.explained_variance_ratio_.tolist(),
-            'content_latents_pca': content_latents_pca.tolist(),
-            'style_latents_pca': style_latents_pca.tolist()
-        }
+        results['pca'] = pca_results
         
         return results
 
@@ -414,7 +500,9 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         #decoder=feature_extractor.decoder,
         decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         #adain=AdaINFusion()
-        adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
+        #adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
+        #adain=WeightedAdaIN(embed_dim=config['model']['embed_dim'])
+        adain=LearnableAdaIN(embed_dim=config['model']['embed_dim'])
         #adain=HistoAdaINSpatialAware(embed_dim=config['model']['embed_dim'], use_content_residual=config['training'][stage_name]['use_content_residual'])
         #adain=HistoAdaINHybrid(patch_size=config['model']['patch_size'])
     )
@@ -535,7 +623,8 @@ def main(config_path='config.yaml'):
         run_final_eval=True  # Set to True to run final evaluation and visualization
     )
     # Compute feature similarity metrics
-    #metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    asd()
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
@@ -636,7 +725,7 @@ def main(config_path='config.yaml'):
             device=device,
             run_final_eval=True  # Set to True to run final evaluation and visualization
         )
-    if 0:
+    if 1:
         visualize_reconstructed_images(model,
             val_loader,
             device,
@@ -644,7 +733,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    if 1:
+    if 0:
         visualize_style_transfer(style_model,
             val_loader,
             device,
@@ -665,7 +754,7 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
     pred_exp_imgs, exp_cls_token, exp_patch_tokens = model(exp_imgs.to(device))
 
     fig, ax = plt.subplots(1, 5, figsize=(3 * 5, 3))
-    for i in range(0):
+    for i in range(5):
         fused_patches = i * 0.25 * sim_patch_tokens + (4 - i) * 0.25 * exp_patch_tokens
         pred_fused_recon = model.decoder(fused_patches.to(device))[1]
         ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
@@ -708,7 +797,7 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
     
     sampled_patch_tokens = torch.from_numpy(sampled_patch_tokens).float().to(device)
     
-    for i in range(5):
+    for i in range(0):
         # Use the sampled patch tokens (you can index by i if you want different samples)
         fused_patches = sampled_patch_tokens[i:i+1] if i < B else sampled_patch_tokens[0:1]
         pred_fused_recon = model.decoder(fused_patches.to(device))[0]

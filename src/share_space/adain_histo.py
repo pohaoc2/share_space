@@ -75,8 +75,8 @@ class HistoAdaIN(nn.Module):
         # === 1. Normalize content (preserve structure) ===
         if is_patches:
             # (B, N, D) - normalize across patches, per feature dimension
-            content_mean = content_features.mean(dim=1, keepdim=True)  # (B, 1, D)
-            content_std = content_features.std(dim=1, keepdim=True, unbiased=False) + self.eps
+            content_mean = content_features.mean(dim=-1, keepdim=True)  # (B, N, 1)
+            content_std = content_features.std(dim=-1, keepdim=True, unbiased=False) + self.eps
         else:
             # (B, D) - normalize across feature dimension
             content_mean = content_features.mean(dim=1, keepdim=True)  # (B, 1)
@@ -90,7 +90,7 @@ class HistoAdaIN(nn.Module):
             if is_patches:
                 # For patches: aggregate style across all patches first
                 style_encoded = self.style_encoder(style_features)  # (B, N, D)
-                style_global = style_encoded.mean(dim=1)  # (B, D)
+                style_global = style_encoded.mean(dim=-1, keepdim=True)  # (B, N, 1)
                 
                 # Predict affine parameters
                 gamma = self.gamma_net(style_global).unsqueeze(1)  # (B, 1, D)
@@ -104,21 +104,199 @@ class HistoAdaIN(nn.Module):
         else:  # standard AdaIN
             # Use style statistics directly
             if is_patches:
-                style_mean = style_features.mean(dim=1, keepdim=True)  # (B, 1, D)
-                style_std = style_features.std(dim=1, keepdim=True, unbiased=False) + self.eps
+                style_mean = style_features.mean(dim=-1, keepdim=True)  # (B, N, 1)
+                style_std = style_features.std(dim=-1, keepdim=True, unbiased=False) + self.eps
                 gamma = style_std
                 beta = style_mean
             else:
-                style_mean = style_features.mean(dim=1, keepdim=True)  # (B, 1)
-                style_std = style_features.std(dim=1, keepdim=True, unbiased=False) + self.eps
+                style_mean = style_features.mean(dim=-1, keepdim=True)  # (B, 1)
+                style_std = style_features.std(dim=-1, keepdim=True, unbiased=False) + self.eps
                 gamma = style_std
                 beta = style_mean
         
         # === 3. Apply style transfer ===
         fused_features = content_normalized * gamma + beta
-        fused_features = self.test_net(style_features) + self.test_net2(content_features)
+        #fused_features = self.test_net(style_features) + self.test_net2(content_features)
         return fused_features
 
+class WeightedAdaIN(nn.Module):
+    """
+    Learns weights to combine content and style statistics
+    Handles both (B, D) and (B, N, D) inputs
+    """
+    def __init__(self, embed_dim, eps=1e-5):
+        super().__init__()
+        self.eps = eps
+        self.embed_dim = embed_dim
+        
+        # Learn dimension-wise weights for combining statistics
+        # Input: [content_mean, content_std, style_mean, style_std] = 4*D
+        self.alpha_net = nn.Sequential(
+            nn.Linear(embed_dim * 4, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim),
+            nn.Sigmoid()  # Weight between 0 and 1
+        )
+    
+    def calc_mean_std(self, features):
+        """
+        Calculate mean and std across the FEATURE dimension (last dim)
+        This preserves spatial/patch structure
+        
+        Args:
+            features: (B, D) or (B, N, D)
+        Returns:
+            mean: (B, 1) or (B, N, 1)
+            std: (B, 1) or (B, N, 1)
+        """
+        # Always calculate along the last dimension (feature dimension)
+        mean = features.mean(dim=-1, keepdim=True)
+        std = features.std(dim=-1, keepdim=True, unbiased=False) + self.eps
+        return mean, std
+    
+    def forward(self, content_features, style_features):
+        """
+        Args:
+            content_features: (B, D) or (B, N, D)
+            style_features: (B, D) or (B, N, D)
+        Returns:
+            fused_features: same shape as content_features
+        """
+        # Handle 2D case by adding dummy dimension
+        is_2d = content_features.dim() == 2
+        if is_2d:
+            content_features = content_features.unsqueeze(1)  # (B, D) -> (B, 1, D)
+            style_features = style_features.unsqueeze(1)  # (B, D) -> (B, 1, D)
+        
+        B, N, D = content_features.shape
+        
+        # Get statistics (normalized across feature dimension D)
+        content_mean, content_std = self.calc_mean_std(content_features)  # (B, N, 1)
+        style_mean, style_std = self.calc_mean_std(style_features)  # (B, N, 1)
+        
+        # Normalize content (preserve patch structure)
+        content_normalized = (content_features - content_mean) / content_std  # (B, N, D)
+        
+        # Aggregate statistics across patches for the decision network
+        # We want to learn a global policy based on overall content/style
+        content_mean_global = content_mean.mean(dim=1)  # (B, 1)
+        content_std_global = content_std.mean(dim=1)  # (B, 1)
+        style_mean_global = style_mean.mean(dim=1)  # (B, 1)
+        style_std_global = style_std.mean(dim=1)  # (B, 1)
+        
+        # Expand to feature dimension for the network
+        # Repeat each statistic D times so the network can learn per-dimension weights
+        content_mean_expanded = content_mean_global.expand(B, D)  # (B, D)
+        content_std_expanded = content_std_global.expand(B, D)  # (B, D)
+        style_mean_expanded = style_mean_global.expand(B, D)  # (B, D)
+        style_std_expanded = style_std_global.expand(B, D)  # (B, D)
+        
+        # Concatenate all statistics
+        all_stats = torch.cat([
+            content_mean_expanded,
+            content_std_expanded,
+            style_mean_expanded,
+            style_std_expanded
+        ], dim=-1)  # (B, 4*D)
+        
+        # Learn per-dimension weights
+        alpha = self.alpha_net(all_stats)  # (B, D)
+        alpha = alpha.unsqueeze(1)  # (B, 1, D) to broadcast across patches
+        
+        # Weighted combination of statistics
+        target_mean = alpha * style_mean + (1 - alpha) * content_mean  # (B, N, 1)
+        target_std = alpha * style_std + (1 - alpha) * content_std  # (B, N, 1)
+        
+        # Apply learned statistics
+        fused_features = content_normalized * target_std + target_mean  # (B, N, D)
+        
+        # Remove dummy dimension if input was 2D
+        if is_2d:
+            fused_features = fused_features.squeeze(1)  # (B, 1, D) -> (B, D)
+        
+        return fused_features
+
+class LearnableAdaIN(nn.Module):
+    """
+    Advanced learnable AdaIN with both global and local information
+    """
+    def __init__(self, embed_dim, eps=1e-5):
+        super().__init__()
+        self.eps = eps
+        self.embed_dim = embed_dim
+        
+        # Networks that see both global (across patches) and local (per feature) statistics
+        # Input: [global_mean, global_std, has_local_info] where has_local_info indicates variance in patches
+        self.gamma_net = nn.Sequential(
+            nn.Linear(embed_dim * 3, embed_dim * 2),  # More capacity
+            nn.LayerNorm(embed_dim * 2),
+            nn.GELU(),
+            nn.Linear(embed_dim * 2, embed_dim),
+            nn.Softplus()
+        )
+        
+        self.beta_net = nn.Sequential(
+            nn.Linear(embed_dim * 3, embed_dim * 2),
+            nn.LayerNorm(embed_dim * 2),
+            nn.GELU(),
+            nn.Linear(embed_dim * 2, embed_dim)
+        )
+    
+    def calc_statistics(self, features):
+        """
+        Calculate comprehensive statistics
+        
+        Returns:
+            global_mean: (B, D)
+            global_std: (B, D)
+            local_variance: (B, D) - how much variance across patches
+        """
+        if features.dim() == 2:
+            B, D = features.shape
+            global_mean = features
+            global_std = features.std(dim=0, keepdim=True).expand(B, D) + self.eps
+            local_variance = torch.zeros(B, D, device=features.device)
+        else:
+            B, N, D = features.shape
+            global_mean = features.mean(dim=1)  # (B, D)
+            global_std = features.std(dim=1, unbiased=False) + self.eps  # (B, D)
+            
+            # Measure how much patches vary from each other
+            patch_means = features.mean(dim=-1)  # (B, N)
+            local_variance = patch_means.std(dim=1, unbiased=False)  # (B,)
+            local_variance = local_variance.unsqueeze(-1).expand(B, D)  # (B, D)
+        
+        return global_mean, global_std, local_variance
+    
+    def calc_local_mean_std(self, features):
+        mean = features.mean(dim=-1, keepdim=True)
+        std = features.std(dim=-1, keepdim=True, unbiased=False) + self.eps
+        return mean, std
+    
+    def forward(self, content_features, style_features):
+        is_2d = content_features.dim() == 2
+        
+        # Get comprehensive style statistics
+        style_mean, style_std, style_variance = self.calc_statistics(style_features)
+        
+        # Normalize content locally
+        content_mean_local, content_std_local = self.calc_local_mean_std(content_features)
+        content_normalized = (content_features - content_mean_local) / content_std_local
+        
+        # Predict affine parameters from rich style information
+        style_stats = torch.cat([style_mean, style_std, style_variance], dim=-1)  # (B, 3*D)
+        gamma = self.gamma_net(style_stats)  # (B, D)
+        beta = self.beta_net(style_stats)  # (B, D)
+        
+        # Apply transformation
+        if is_2d:
+            fused_features = content_normalized * gamma + beta
+        else:
+            gamma = gamma.unsqueeze(1)  # (B, 1, D)
+            beta = beta.unsqueeze(1)  # (B, 1, D)
+            fused_features = content_normalized * gamma + beta
+        
+        return fused_features
 
 class HistoAdaINSpatialAware (nn.Module):
     """
