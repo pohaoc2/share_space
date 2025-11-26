@@ -624,7 +624,6 @@ def main(config_path='config.yaml'):
     )
     # Compute feature similarity metrics
     metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
-    asd()
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
