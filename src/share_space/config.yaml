@@ -26,7 +26,7 @@ diffusion:
 # Training Parameters
 training:
   stage_1:
-    eval_only: True
+    eval_only: false
     epochs: 5
     learning_rate: 0.0001
     weight_decay: 0.05
@@ -35,6 +35,7 @@ training:
     save_dir: ./checkpoints/stage_1
     load_path: ./checkpoints/stage_1/best_model.pth
     eval_every: 5
+    use_diffusion: false
     run_final_eval: false
   stage_2:
     eval_only: True

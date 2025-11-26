@@ -81,6 +81,7 @@ class TeacherStudentTrainer:
         
         sim_images = batch['simulation'].to(self.device).float()
         exp_images = batch['experimental'].to(self.device).float()
+        exp_iamges = copy.deepcopy(sim_images)
         # Store accumulated losses
         accumulated_losses = {}
         
@@ -174,14 +175,15 @@ class TeacherStudentTrainer:
         )
         
         noise = torch.randn_like(latent_vector)
-        
-        alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
-        sqrt_alpha_t = torch.sqrt(alpha_t)
-        sqrt_one_minus_alpha_t = torch.sqrt(1.0 - alpha_t)
-        
-        noisy_latent = sqrt_alpha_t * latent_vector + sqrt_one_minus_alpha_t * noise
-        noise_pred = self.diffusion.unet(noisy_latent, t)
-        
+        if 0:
+            alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
+            sqrt_alpha_t = torch.sqrt(alpha_t)
+            sqrt_one_minus_alpha_t = torch.sqrt(1.0 - alpha_t)
+            
+            noisy_latent = sqrt_alpha_t * latent_vector + sqrt_one_minus_alpha_t * noise
+            noise_pred = self.diffusion.unet(noisy_latent, t)
+        noisy_latent = noise
+        noise_pred = noise
         # Compute losses
         losses = loss_fn(outputs, target_images, mask, patch_size, noisy_latent, noise_pred)
         

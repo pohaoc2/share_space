@@ -707,7 +707,7 @@ def main(config_path='config.yaml'):
         plt.tight_layout()
         plt.savefig(Path(config['training']['stage_1']['save_dir']) / f'generated_images.png', dpi=300, bbox_inches='tight')
         plt.show()
-    if 1:
+    if 0:
         style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
         best_psnr = float('-inf')
         best_psnr = train_stage(
