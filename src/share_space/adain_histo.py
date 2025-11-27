@@ -49,18 +49,6 @@ class HistoAdaIN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(embed_dim // 2, embed_dim)
             )
-            self.test_net = nn.Sequential(
-                nn.Linear(embed_dim, embed_dim),
-                nn.Linear(embed_dim, embed_dim)
-            )
-            if 0:
-                nn.init.eye_(self.test_net[0].weight)
-                self.test_net[0].weight.data += torch.randn_like(self.test_net[0].weight) * 0.01
-                nn.init.zeros_(self.test_net[0].bias)
-                nn.init.eye_(self.test_net[1].weight)
-                self.test_net[1].weight.data += torch.randn_like(self.test_net[1].weight) * 0.01
-                nn.init.zeros_(self.test_net[1].bias)
-            self.test_net2 = copy.deepcopy(self.test_net)
     def forward(self, content_features, style_features):
         """
         Args:
@@ -90,7 +78,7 @@ class HistoAdaIN(nn.Module):
             if is_patches:
                 # For patches: aggregate style across all patches first
                 style_encoded = self.style_encoder(style_features)  # (B, N, D)
-                style_global = style_encoded.mean(dim=-1, keepdim=True)  # (B, N, 1)
+                style_global = style_encoded.mean(dim=1)  # (B, N, 1)
                 
                 # Predict affine parameters
                 gamma = self.gamma_net(style_global).unsqueeze(1)  # (B, 1, D)

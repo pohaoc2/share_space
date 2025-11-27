@@ -139,7 +139,7 @@ def train_stage(model, trainer, optimizer, scheduler, loss_fn, train_loader, val
     
     return best_psnr, loss_history
 
-def visualize_pca(*feature_sets, save_dir, labels=None, colors=None, markers=None):
+def visualize_pca(*feature_sets, save_dir=None, labels=None, colors=None, markers=None):
     """
     Create PCA visualization of multiple feature sets.
     
@@ -251,9 +251,11 @@ def visualize_pca(*feature_sets, save_dir, labels=None, colors=None, markers=Non
     ax.set_ylabel(f'PC2 (Explained Variance: {pca.explained_variance_ratio_[1]:.2%})', fontsize=12)
     ax.legend(loc='best', fontsize=10)
     plt.tight_layout()
-    os.makedirs(save_dir, exist_ok=True)
-    plt.savefig(Path(save_dir) / f'pca_visualization.png', dpi=300, bbox_inches='tight')
-    plt.show()
+    if save_dir is not None:
+        os.makedirs(save_dir, exist_ok=True)
+        plt.savefig(Path(save_dir) / f'pca_visualization_{labels[0]}_{labels[1]}_{labels[2]}.png', dpi=300, bbox_inches='tight')
+    else:
+        plt.show()
     
     # Return PCA results
     result = {
@@ -651,9 +653,9 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         #decoder=feature_extractor.decoder,
         decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         #adain=AdaINFusion()
-        #adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
+        adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
         #adain=WeightedAdaIN(embed_dim=config['model']['embed_dim'])
-        adain=LearnableAdaIN(embed_dim=config['model']['embed_dim'])
+        #adain=LearnableAdaIN(embed_dim=config['model']['embed_dim'])
         #adain=HistoAdaINSpatialAware(embed_dim=config['model']['embed_dim'], use_content_residual=config['training'][stage_name]['use_content_residual'])
         #adain=HistoAdaINHybrid(patch_size=config['model']['patch_size'])
     )
@@ -875,7 +877,7 @@ def main(config_path='config.yaml'):
             device=device,
             run_final_eval=True  # Set to True to run final evaluation and visualization
         )
-    if 1:
+    if 0:
         visualize_reconstructed_images(model,
             val_loader,
             device,
@@ -883,7 +885,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    if 1:
+    if 0:
         visualize_style_transfer(style_model,
             val_loader,
             device,
@@ -891,6 +893,29 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['style_transfer']['n_viz'],
             states=list(state_names.keys())
         )
+    style_model.eval()
+    first_batch = next(iter(val_loader))
+    all_content_features_cls = []
+    all_style_features_cls = []
+    all_recon_features_cls = []
+    for batch in val_loader:
+        content_features_cls = model.encoder(batch['simulation'].to(device))[0]
+        style_features_cls = model.encoder(batch['experimental'].to(device))[0]
+        recon = style_model(batch['simulation'].to(device), batch['experimental'].to(device))
+        recon_features_cls = model.encoder(recon.to(device))[0]
+        all_content_features_cls.append(content_features_cls)
+        all_style_features_cls.append(style_features_cls)
+        all_recon_features_cls.append(recon_features_cls.detach())
+    all_content_features_cls = torch.cat(all_content_features_cls, dim=0)
+    all_style_features_cls = torch.cat(all_style_features_cls, dim=0)
+    all_recon_features_cls = torch.cat(all_recon_features_cls, dim=0)
+    pca_results = visualize_pca(
+        all_content_features_cls, 
+        all_style_features_cls, 
+        all_recon_features_cls, 
+        labels=['Simulation', 'Experiment', 'Reconstructed'],
+        save_dir=config['training']['stage_2']['save_dir']
+    )
 
 def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5, states=list(state_names.keys())):
     print(f"Visualizing reconstructed images...")
@@ -904,7 +929,6 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
     pred_exp_imgs, exp_cls_token, exp_patch_tokens = model(exp_imgs.to(device))
     exp_idx = 5
     fig, ax = plt.subplots(1, 5, figsize=(3 * 5, 3))
-    print(f"sim_patch_tokens shape: {sim_patch_tokens.shape}")
     for i in range(5):
         fused_patches = i * 0.25 * sim_patch_tokens + (4 - i) * 0.25 * exp_patch_tokens
         pred_fused_recon = model.decoder(fused_patches.to(device))[exp_idx]
