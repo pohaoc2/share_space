@@ -38,7 +38,7 @@ training:
     use_diffusion: false
     run_final_eval: false
   stage_2:
-    eval_only: True
+    eval_only: false
     epochs: 2
     learning_rate: 0.001
     weight_decay: 0.05
@@ -66,7 +66,7 @@ loss:
 data:
   exp_dir: ../../data/exp
   sim_dir: ../../data/sim
-  batch_size: 16
+  batch_size: 8
   val_samples: 10
   num_workers: 2
   train_split: 0.9

@@ -226,7 +226,7 @@ def visualize_pca(*feature_sets, save_dir, labels=None, colors=None, markers=Non
             )
     
     # Plot first sample of each set (filled markers with black edge)
-    sample_idx = 3
+    sample_idx = 5
     for i, (label, color, marker) in enumerate(zip(labels, colors, markers)):
         latents = latents_pca_np[label]
         if len(latents) > 0:
@@ -774,8 +774,7 @@ def main(config_path='config.yaml'):
         run_final_eval=True  # Set to True to run final evaluation and visualization
     )
     # Compute feature similarity metrics
-    metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
-    asd()
+    #metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
@@ -858,7 +857,7 @@ def main(config_path='config.yaml'):
         plt.tight_layout()
         plt.savefig(Path(config['training']['stage_1']['save_dir']) / f'generated_images.png', dpi=300, bbox_inches='tight')
         plt.show()
-    if 0:
+    if 1:
         style_model, trainer_style, optimizer, scheduler, loss_fn, evaluator = _get_stage_2_model(config, device, "stage_2", model)
         best_psnr = float('-inf')
         best_psnr = train_stage(
@@ -884,7 +883,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    if 0:
+    if 1:
         visualize_style_transfer(style_model,
             val_loader,
             device,
@@ -903,15 +902,16 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
     sim_imgs = first_batch['simulation']
     pred_sim_imgs, sim_cls_token, sim_patch_tokens = model(sim_imgs.to(device))
     pred_exp_imgs, exp_cls_token, exp_patch_tokens = model(exp_imgs.to(device))
-
+    exp_idx = 5
     fig, ax = plt.subplots(1, 5, figsize=(3 * 5, 3))
+    print(f"sim_patch_tokens shape: {sim_patch_tokens.shape}")
     for i in range(5):
         fused_patches = i * 0.25 * sim_patch_tokens + (4 - i) * 0.25 * exp_patch_tokens
-        pred_fused_recon = model.decoder(fused_patches.to(device))[1]
+        pred_fused_recon = model.decoder(fused_patches.to(device))[exp_idx]
         ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
         ax[i].axis('off')
         ax[i].set_title(f'{i * 25}% Sim + {100 - i * 25}% Exp')
-    exp_idx = 5
+    
     # fit the exp distribution and sample from it
     # Convert to numpy and get the shape
     exp_patch_tokens_np = exp_patch_tokens.cpu().detach().numpy()
