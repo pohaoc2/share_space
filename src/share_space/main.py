@@ -16,7 +16,7 @@ import copy
 from share_space.diffusion import DiffusionModel
 from share_space.trainer_diffusion import LatentDiffusionTrainer
 from share_space.models.adain import AdaINFusion#, HistoAdaIN
-from share_space.adain_histo import HistoAdaINSpatialAware, HistoAdaIN, HistoAdaINHybrid, WeightedAdaIN, LearnableAdaIN
+from share_space.adain_histo import HistoAdaINSpatialAware, HistoAdaIN, HistoAdaINHybrid, WeightedAdaIN, LearnableAdaIN, FusionModule
 from share_space.latent_adapter import LatentDomainAdapter
 from share_space.latent_adapter import train_epoch as train_latent_adapter_epoch
 import os
@@ -653,7 +653,8 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         #decoder=feature_extractor.decoder,
         decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         #adain=AdaINFusion()
-        adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
+        #adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
+        adain=FusionModule(embed_dim=config['model']['embed_dim'], mode='cross_attn')
         #adain=WeightedAdaIN(embed_dim=config['model']['embed_dim'])
         #adain=LearnableAdaIN(embed_dim=config['model']['embed_dim'])
         #adain=HistoAdaINSpatialAware(embed_dim=config['model']['embed_dim'], use_content_residual=config['training'][stage_name]['use_content_residual'])

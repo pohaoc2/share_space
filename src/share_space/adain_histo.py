@@ -100,6 +100,72 @@ class HistoAdaIN(nn.Module):
         fused_features = content_normalized * gamma + beta
         return fused_features
 
+class FusionModule(nn.Module):
+    """The fusion module you should use"""
+    def __init__(self, embed_dim, mode='cross_attn'):
+        super().__init__()
+        self.mode = mode
+        
+        if mode == 'hybrid':
+            # Global style transfer (AdaIN)
+            self.adain = HistoAdaIN(embed_dim)
+            
+            # Local style correspondence (Attention)
+            self.style_attn = nn.MultiheadAttention(
+                embed_dim, num_heads=8, batch_first=True
+            )
+            
+            # Adaptive combination
+            self.fusion_gate = nn.Sequential(
+                nn.Linear(embed_dim * 2, embed_dim),
+                nn.LayerNorm(embed_dim),
+                nn.GELU(),
+                nn.Linear(embed_dim, 1),
+                nn.Sigmoid()
+            )
+            
+        elif mode == 'cross_attn':
+            self.style_attn = nn.MultiheadAttention(
+                embed_dim, num_heads=8, batch_first=True
+            )
+            self.norm = nn.LayerNorm(embed_dim)
+    
+    def forward(self, content_features, style_features):
+        """
+        Args:
+            content_features: (B, N, D) from sim image
+            style_features: (B, N, D) from random exp image
+        Returns:
+            fused_features: (B, N, D)
+        """
+        if self.mode == 'hybrid':
+            # Branch 1: Global style (color, texture)
+            adain_out = self.adain(content_features, style_features)
+            
+            # Branch 2: Local correspondence (spatial patterns)
+            attn_out, _ = self.style_attn(
+                query=content_features,
+                key=style_features,
+                value=style_features
+            )
+            attn_out = content_features + attn_out  # Residual
+            
+            # Adaptive fusion
+            concat = torch.cat([adain_out, attn_out], dim=-1)
+            gate = self.fusion_gate(concat)  # (B, N, 1)
+            
+            fused = gate * adain_out + (1 - gate) * attn_out
+            
+        elif self.mode == 'cross_attn':
+            attn_out, _ = self.style_attn(
+                query=content_features,
+                key=style_features,
+                value=style_features
+            )
+            fused = self.norm(content_features + attn_out)
+        
+        return fused
+
 class WeightedAdaIN(nn.Module):
     """
     Learns weights to combine content and style statistics
