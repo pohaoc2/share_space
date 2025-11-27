@@ -29,25 +29,18 @@ class HistoAdaIN(nn.Module):
         self.eps = eps
         
         if mode == 'learnable':
-            # Learn to map style features to affine parameters
-            self.style_encoder = nn.Sequential(
-                nn.Linear(embed_dim, embed_dim),
-                nn.LayerNorm(embed_dim),
-                nn.GELU(),
-                nn.Linear(embed_dim, embed_dim)
-            )
-            
+            # Learn to map style features to affine parameter
             self.gamma_net = nn.Sequential(
                 nn.Linear(embed_dim, embed_dim // 2),
                 nn.ReLU(),
-                nn.Linear(embed_dim // 2, embed_dim),
-                nn.Softplus()  # Ensure positive scale
+                nn.Linear(embed_dim // 2, 1),  # Output scalar per patch
+                nn.Softplus()
             )
-            
+
             self.beta_net = nn.Sequential(
                 nn.Linear(embed_dim, embed_dim // 2),
                 nn.ReLU(),
-                nn.Linear(embed_dim // 2, embed_dim)
+                nn.Linear(embed_dim // 2, 1)  # Output scalar per patch
             )
     def forward(self, content_features, style_features):
         """
@@ -76,22 +69,23 @@ class HistoAdaIN(nn.Module):
         if self.mode == 'learnable':
             # Learn affine parameters from style
             if is_patches:
-                # For patches: aggregate style across all patches first
-                style_encoded = self.style_encoder(style_features)  # (B, N, D)
-                style_global = style_encoded.mean(dim=1)  # (B, N, 1)
-                
-                # Predict affine parameters
-                gamma = self.gamma_net(style_global).unsqueeze(1)  # (B, 1, D)
-                beta = self.beta_net(style_global).unsqueeze(1)  # (B, 1, D)
+                # Compute per-patch style statistics
+                style_mean = style_features.mean(dim=-1, keepdim=True)  # (B, N, 1)
+                style_std = style_features.std(dim=-1, keepdim=True, unbiased=False) + self.eps  # (B, N, 1)
+                                
+                # Learn to modulate the style statistics per patch
+                gamma = self.gamma_net(style_features) * style_std  # (B, N, D)
+                beta = self.beta_net(style_features) + style_mean  # (B, N, D)
             else:
                 # For CLS: use directly
-                style_encoded = self.style_encoder(style_features)  # (B, D)
-                gamma = self.gamma_net(style_encoded)  # (B, D)
-                beta = self.beta_net(style_encoded)  # (B, D)
-        
+                style_mean = style_features.mean(dim=-1, keepdim=True)  # (B, 1)
+                style_std = style_features.std(dim=-1, keepdim=True, unbiased=False) + self.eps
+                gamma = self.gamma_net(style_features) * style_std
+                beta = self.beta_net(style_features) + style_mean
+
         else:  # standard AdaIN
-            # Use style statistics directly
             if is_patches:
+                # Per-patch statistics
                 style_mean = style_features.mean(dim=-1, keepdim=True)  # (B, N, 1)
                 style_std = style_features.std(dim=-1, keepdim=True, unbiased=False) + self.eps
                 gamma = style_std
@@ -104,7 +98,6 @@ class HistoAdaIN(nn.Module):
         
         # === 3. Apply style transfer ===
         fused_features = content_normalized * gamma + beta
-        #fused_features = self.test_net(style_features) + self.test_net2(content_features)
         return fused_features
 
 class WeightedAdaIN(nn.Module):

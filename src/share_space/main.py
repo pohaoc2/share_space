@@ -877,7 +877,7 @@ def main(config_path='config.yaml'):
             device=device,
             run_final_eval=True  # Set to True to run final evaluation and visualization
         )
-    if 0:
+    if 1:
         visualize_reconstructed_images(model,
             val_loader,
             device,
@@ -885,7 +885,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    if 0:
+    if 1:
         visualize_style_transfer(style_model,
             val_loader,
             device,
@@ -910,9 +910,9 @@ def main(config_path='config.yaml'):
     all_style_features_cls = torch.cat(all_style_features_cls, dim=0)
     all_recon_features_cls = torch.cat(all_recon_features_cls, dim=0)
     pca_results = visualize_pca(
-        all_content_features_cls, 
-        all_style_features_cls, 
-        all_recon_features_cls, 
+        all_content_features_cls.detach().cpu().numpy(), 
+        all_style_features_cls.detach().cpu().numpy(), 
+        all_recon_features_cls.detach().cpu().numpy(), 
         labels=['Simulation', 'Experiment', 'Reconstructed'],
         save_dir=config['training']['stage_2']['save_dir']
     )
