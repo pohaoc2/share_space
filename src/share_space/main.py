@@ -755,6 +755,7 @@ def main(config_path='config.yaml'):
             plt.tight_layout()
             plt.show()
         plt.savefig(f'first_batch_visualization.png', dpi=300, bbox_inches='tight')
+        asd()
     # Train stage 1
     model, trainer, optimizer, scheduler, loss_fn, evaluator = _get_stage_1_model(config, device, "stage_1")
     print("Starting training...")
@@ -777,7 +778,8 @@ def main(config_path='config.yaml'):
         run_final_eval=True  # Set to True to run final evaluation and visualization
     )
     # Compute feature similarity metrics
-    #metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    asd()
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
@@ -928,7 +930,7 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
     sim_imgs = first_batch['simulation']
     pred_sim_imgs, sim_cls_token, sim_patch_tokens = model(sim_imgs.to(device))
     pred_exp_imgs, exp_cls_token, exp_patch_tokens = model(exp_imgs.to(device))
-    exp_idx = 5
+    exp_idx = 0
     fig, ax = plt.subplots(1, 5, figsize=(3 * 5, 3))
     for i in range(5):
         fused_patches = i * 0.25 * sim_patch_tokens + (4 - i) * 0.25 * exp_patch_tokens
@@ -980,13 +982,19 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
         ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
         ax[i].axis('off')
         #ax[i].set_title(f'Sample from Exp Distribution')
+    #fig, ax = plt.subplots(2, 5, figsize=(3 * 5, 3 * 2))
     for i in range(0):
-        #fused_patches = i * 0.25 * exp_patch_tokens[exp_idx:exp_idx+1] + (4 - i) * 0.25 * exp_patch_tokens[exp_idx+1:exp_idx+2]
+        fused_patches = i * 0.25 * exp_patch_tokens[exp_idx:exp_idx+1] + (4 - i) * 0.25 * exp_patch_tokens[exp_idx+1:exp_idx+2]
+        fused_patches_sim = i * 0.25 * sim_patch_tokens[exp_idx:exp_idx+1] + (4 - i) * 0.25 * sim_patch_tokens[exp_idx+1:exp_idx+2]
         #pred_fused_recon = model.decoder(random_fused_patches.to(device))[0]
         pred_fused_recon = model.decoder(fused_patches.to(device))[0]
-        ax[i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
-        ax[i].axis('off')
-        ax[i].set_title(f'{i * 25}% Exp1 + {100 - i * 25}% Exp2')
+        pred_fused_recon_sim = model.decoder(fused_patches_sim.to(device))[0]
+        ax[0, i].imshow(torch.clamp(inverse_transform(pred_fused_recon.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
+        ax[1, i].imshow(torch.clamp(inverse_transform(pred_fused_recon_sim.permute(1, 2, 0).cpu().detach()), 0, 1).numpy())
+        ax[0, i].axis('off')
+        ax[1, i].axis('off')
+        ax[0, i].set_title(f'{i * 25}% Exp1 + {100 - i * 25}% Exp2')
+        ax[1, i].set_title(f'{i * 25}% Sim + {100 - i * 25}% Exp')
     plt.tight_layout()
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
