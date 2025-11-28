@@ -253,7 +253,8 @@ def visualize_pca(*feature_sets, save_dir=None, labels=None, colors=None, marker
     plt.tight_layout()
     if save_dir is not None:
         os.makedirs(save_dir, exist_ok=True)
-        plt.savefig(Path(save_dir) / f'pca_visualization_{labels[0]}_{labels[1]}_{labels[2]}.png', dpi=300, bbox_inches='tight')
+        name = '_'.join(labels)
+        plt.savefig(Path(save_dir) / f'pca_visualization_{name}.png', dpi=300, bbox_inches='tight')
     else:
         plt.show()
     
@@ -330,8 +331,10 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
         style_features_cls = torch.cat(all_style_latents, dim=0)  # [N, D]
         all_sim = torch.cat(all_sim, dim=0).permute(0, 2, 3, 1)  # [B, N, D]
         all_exp = torch.cat(all_exp, dim=0).permute(0, 2, 3, 1)  # [B, N, D]
+        print(f"all_sim shape: {all_sim.shape}, all_exp shape: {all_exp.shape}")
         all_content_patches = torch.cat(all_content_patches, dim=0)  # [B, N, D]
         all_style_patches = torch.cat(all_style_patches, dim=0)  # [B, N, D]
+        sample_idx = 3
         results = {}
         if verbose:
             print(f"Total samples - content_features_cls: {content_features_cls.shape}, style_features_cls: {style_features_cls.shape}")
@@ -345,7 +348,7 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
             print(f"Frechet permutation test p-value: {pval}")
 
             # Create figure with gridspec for custom layout
-            if 0:
+            if 1:
                 fig = plt.figure(figsize=(16, 8))
                 gs = fig.add_gridspec(2, 4, height_ratios=[1, 1], hspace=0.3)
 
@@ -354,7 +357,6 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
 
                 # Get the number of features
                 n_features = content_features_cls.shape[1]
-                sample_idx = 3
 
                 # Get the content and style feature arrays
                 content_values = content_features_cls[sample_idx, :].cpu().numpy()
@@ -779,6 +781,7 @@ def main(config_path='config.yaml'):
     )
     # Compute feature similarity metrics
     metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    
     asd()
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
