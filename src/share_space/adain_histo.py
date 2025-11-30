@@ -102,7 +102,7 @@ class HistoAdaIN(nn.Module):
         
         # === 3. Apply style transfer ===
         fused_features = content_normalized * gamma + beta
-        fused_features = self.test_net(content_features) + self.test_net_2(style_features)
+        #fused_features = self.test_net(content_features) + self.test_net_2(style_features)
         return fused_features
 
 class FusionModule(nn.Module):

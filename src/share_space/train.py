@@ -13,11 +13,12 @@ class TeacherStudentTrainer:
     """Teacher-Student training following DINOv2 approach"""
     def __init__(self, student_model: nn.Module, device: str = 'cuda', 
                  teacher_momentum: float = 0.996, center_momentum: float = 0.9,
-                 diffusion_model: DiffusionModel = None):
+                 diffusion_model: DiffusionModel = None, use_diffusion: bool = False):
         self.device = device
         self.student = student_model.to(device)
         self.teacher = copy.deepcopy(student_model).to(device)
         self.diffusion = diffusion_model.to(device)
+        self.use_diffusion = use_diffusion
         # Freeze teacher
         for param in self.teacher.parameters():
             param.requires_grad = False
@@ -160,28 +161,30 @@ class TeacherStudentTrainer:
         
         # Forward pas
         outputs = self.forward_pass(images, mask)
-        
-        latent_vector = outputs['teacher_cls']
-        
-        # Reshape for diffusion
-        H_latent = W_latent = int(math.sqrt(latent_vector.shape[1] / self.diffusion.unet.in_channels))
-        latent_vector = latent_vector.view(B, self.diffusion.unet.in_channels, H_latent, W_latent)
-        # Diffusion process
-        t = torch.randint(
-            0, 
-            self.diffusion.timesteps, 
-            (B,),
-            device=self.device
-        )
-        
-        noise = torch.randn_like(latent_vector)
-        alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
-        sqrt_alpha_t = torch.sqrt(alpha_t)
-        sqrt_one_minus_alpha_t = torch.sqrt(1.0 - alpha_t)
-        
-        noisy_latent = sqrt_alpha_t * latent_vector + sqrt_one_minus_alpha_t * noise
-        noise_pred = self.diffusion.unet(noisy_latent, t)
-
+        if self.use_diffusion:
+            latent_vector = outputs['teacher_cls']
+            
+            # Reshape for diffusion
+            H_latent = W_latent = int(math.sqrt(latent_vector.shape[1] / self.diffusion.unet.in_channels))
+            latent_vector = latent_vector.view(B, self.diffusion.unet.in_channels, H_latent, W_latent)
+            # Diffusion process
+            t = torch.randint(
+                0, 
+                self.diffusion.timesteps, 
+                (B,),
+                device=self.device
+            )
+            
+            noise = torch.randn_like(latent_vector)
+            alpha_t = self.diffusion.alphas_cumprod[t].view(-1, 1, 1, 1)
+            sqrt_alpha_t = torch.sqrt(alpha_t)
+            sqrt_one_minus_alpha_t = torch.sqrt(1.0 - alpha_t)
+            
+            noisy_latent = sqrt_alpha_t * latent_vector + sqrt_one_minus_alpha_t * noise
+            noise_pred = self.diffusion.unet(noisy_latent, t)
+        else:
+            noisy_latent = None
+            noise_pred = None
         # Compute losses
         losses = loss_fn(outputs, target_images, mask, patch_size, noisy_latent, noise_pred)
         

@@ -8,14 +8,15 @@ class Sim2ExpLoss(nn.Module):
     """Combined loss for simulation to experimental translation"""
     def __init__(self, recon_weight: float = 1.0, distill_weight: float = 1.0, 
                  mask_weight: float = 1.0, perceptual_weight: float = 0.1,
-                 diffusion_weight: float = 1.0):
+                 diffusion_weight: float = 1.0, use_diffusion: bool = False):
         super().__init__()
         self.recon_weight = recon_weight
         self.distill_weight = distill_weight
         self.mask_weight = mask_weight
         self.perceptual_weight = perceptual_weight
         self.diffusion_weight = diffusion_weight
-    
+        self.use_diffusion = use_diffusion
+        
     def reconstruction_loss(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """L1 + L2 reconstruction loss"""
         # Ensure float32
@@ -144,9 +145,10 @@ class Sim2ExpLoss(nn.Module):
         )
 
         # Diffusion loss
-        losses['diffusion'] = self.diffusion_weight * self.diffusion_loss(
-            noisy_latent, noise_pred
-        )
+        if self.use_diffusion:
+            losses['diffusion'] = self.diffusion_weight * self.diffusion_loss(
+                noisy_latent, noise_pred
+            )
         return losses
 
 

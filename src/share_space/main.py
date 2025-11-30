@@ -602,6 +602,7 @@ def _get_stage_1_model(config, device, stage_name):
         student_model=model,
         device=device,
         teacher_momentum=config['training'][stage_name]['teacher_momentum'],
+        use_diffusion=config['training'][stage_name]['use_diffusion'],
         diffusion_model=DiffusionModel(
             unet_config=config['diffusion']['unet_config'],
             timesteps=config['diffusion']['timesteps'],
@@ -612,6 +613,7 @@ def _get_stage_1_model(config, device, stage_name):
     
     # Create loss function
     loss_fn = Sim2ExpLoss(
+        use_diffusion=config['training'][stage_name]['use_diffusion'],
         recon_weight=config['loss']['recon_weight'],
         distill_weight=config['loss']['distill_weight'],
         mask_weight=config['loss']['mask_weight'],
@@ -681,7 +683,7 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
     param_groups = [
         {
             'params': style_model.decoder.parameters(),
-            'lr': config['training'][stage_name]['learning_rate'],
+            'lr': config['training'][stage_name]['learning_rate'] * 0.01,
             'weight_decay': config['training'][stage_name]['weight_decay'],
         },
         {
@@ -875,7 +877,7 @@ def main(config_path='config.yaml'):
             device=device,
             run_final_eval=True  # Set to True to run final evaluation and visualization
         )
-    if 0:
+    if 1:
         visualize_reconstructed_images(model,
             val_loader,
             device,
