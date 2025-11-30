@@ -97,6 +97,7 @@ class StyleTransferTrainer:
         content_images = content_images.float()
         style_images = style_images.float()
         shuffled_style_images = shuffled_style_images.float()
+        #shuffled_style_images = copy.deepcopy(style_images)
         B = content_images.shape[0]
         
         # Step 1: Extract features (frozen)

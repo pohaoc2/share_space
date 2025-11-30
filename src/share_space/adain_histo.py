@@ -27,7 +27,11 @@ class HistoAdaIN(nn.Module):
         self.embed_dim = embed_dim
         self.mode = mode
         self.eps = eps
-        
+        self.test_net = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.Linear(embed_dim, embed_dim),  # Output scalar per patch
+        )
+        self.test_net_2 = copy.deepcopy(self.test_net)
         if mode == 'learnable':
             # Learn to map style features to affine parameter
             self.gamma_net = nn.Sequential(
@@ -98,6 +102,7 @@ class HistoAdaIN(nn.Module):
         
         # === 3. Apply style transfer ===
         fused_features = content_normalized * gamma + beta
+        fused_features = self.test_net(content_normalized) * 0 + self.test_net_2(style_features)
         return fused_features
 
 class FusionModule(nn.Module):

@@ -168,7 +168,7 @@ def visualize_pca(*feature_sets, save_dir=None, labels=None, colors=None, marker
     
     # Default styling
     default_labels = ['Feature Set 1', 'Feature Set 2', 'Feature Set 3', 'Feature Set 4', 'Feature Set 5']
-    default_colors = ['blue', 'red', 'green', 'orange', 'purple']
+    default_colors = ['#AAAAAA', '#993F71', 'green', 'orange', 'purple']
     default_markers = ['o', 's', '^', 'D', 'v']
     
     if labels is None:
@@ -208,7 +208,7 @@ def visualize_pca(*feature_sets, save_dir=None, labels=None, colors=None, marker
         latents_pca[label] = latents_pca_np[label].tolist()
     
     # Create scatter plot
-    fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
+    fig, ax = plt.subplots(1, 1, figsize=(4, 3.75))
     
     # Plot all samples except first (hollow markers)
     for i, (label, color, marker) in enumerate(zip(labels, colors, markers)):
@@ -239,13 +239,13 @@ def visualize_pca(*feature_sets, save_dir=None, labels=None, colors=None, marker
     if len(feature_sets) == 2:
         x0, y0 = latents_pca_np[labels[0]][sample_idx:sample_idx+1, 0], latents_pca_np[labels[0]][sample_idx:sample_idx+1, 1]
         x1, y1 = latents_pca_np[labels[1]][sample_idx:sample_idx+1, 0], latents_pca_np[labels[1]][sample_idx:sample_idx+1, 1]
-        ax.plot([x0, x1], [y0, y1], 'k--', alpha=0.5, linewidth=1.5)
+        ax.plot([x0, x1], [y0, y1], 'k--', linewidth=1.5)
         
         # Add crosses at 25%, 50%, 75% along the line
         for frac in [0.25, 0.5, 0.75]:
             xc = x0 + (x1 - x0) * frac
             yc = y0 + (y1 - y0) * frac
-            ax.scatter(xc, yc, marker='x', color='gray', s=60, linewidths=2, zorder=10)
+            ax.scatter(xc, yc, marker='x', color='k', s=60, linewidths=2, zorder=10)
     
     ax.set_xlabel(f'PC1 (Explained Variance: {pca.explained_variance_ratio_[0]:.2%})', fontsize=12)
     ax.set_ylabel(f'PC2 (Explained Variance: {pca.explained_variance_ratio_[1]:.2%})', fontsize=12)
@@ -348,7 +348,7 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
             print(f"Frechet permutation test p-value: {pval}")
 
             # Create figure with gridspec for custom layout
-            if 1:
+            if 0:
                 fig = plt.figure(figsize=(16, 8))
                 gs = fig.add_gridspec(2, 4, height_ratios=[1, 1], hspace=0.3)
 
@@ -655,8 +655,8 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
         #decoder=feature_extractor.decoder,
         decoder=ConvDecoder(**decoder_config) if config['model']['decoder_type'] == 'conv' else TransformerDecoder(**decoder_config),
         #adain=AdaINFusion()
-        #adain=HistoAdaIN(embed_dim=config['model']['embed_dim'])
-        adain=FusionModule(embed_dim=config['model']['embed_dim'], mode='cross_attn')
+        adain=HistoAdaIN(embed_dim=config['model']['embed_dim'], mode='vanilla')
+        #adain=FusionModule(embed_dim=config['model']['embed_dim'], mode='cross_attn')
         #adain=WeightedAdaIN(embed_dim=config['model']['embed_dim'])
         #adain=LearnableAdaIN(embed_dim=config['model']['embed_dim'])
         #adain=HistoAdaINSpatialAware(embed_dim=config['model']['embed_dim'], use_content_residual=config['training'][stage_name]['use_content_residual'])
@@ -681,7 +681,7 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
     param_groups = [
         {
             'params': style_model.decoder.parameters(),
-            'lr': config['training'][stage_name]['learning_rate']*0.01,
+            'lr': config['training'][stage_name]['learning_rate'],
             'weight_decay': config['training'][stage_name]['weight_decay'],
         },
         {
@@ -697,12 +697,6 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
             'weight_decay': config['training'][stage_name]['weight_decay'],
         })
     optimizer = optim.AdamW(param_groups)
-    if 0:
-        optimizer = optim.AdamW(
-            list(style_model.decoder.parameters())+ list(style_model.adain.parameters()) + (list(diffusion_model.parameters()) if config['training'][stage_name]['use_diffusion'] and diffusion_model is not None else []),
-            lr=config['training'][stage_name]['learning_rate'],
-            weight_decay=config['training'][stage_name]['weight_decay']
-        )
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
         T_max=config['training'][stage_name]['epochs'],
@@ -780,9 +774,8 @@ def main(config_path='config.yaml'):
         run_final_eval=True  # Set to True to run final evaluation and visualization
     )
     # Compute feature similarity metrics
-    metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    #metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
     
-    asd()
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
@@ -883,9 +876,9 @@ def main(config_path='config.yaml'):
             device=device,
             run_final_eval=True  # Set to True to run final evaluation and visualization
         )
-    if 1:
+    if 0:
         visualize_reconstructed_images(model,
-            val_loader,
+            train_loader,
             device,
             save_dir=config['visualization']['reconstructed_images']['save_dir'],
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
@@ -893,7 +886,7 @@ def main(config_path='config.yaml'):
         )
     if 1:
         visualize_style_transfer(style_model,
-            val_loader,
+            train_loader,
             device,
             save_dir=config['visualization']['style_transfer']['save_dir'],
             n_viz=config['visualization']['style_transfer']['n_viz'],
@@ -933,7 +926,7 @@ def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5,
     sim_imgs = first_batch['simulation']
     pred_sim_imgs, sim_cls_token, sim_patch_tokens = model(sim_imgs.to(device))
     pred_exp_imgs, exp_cls_token, exp_patch_tokens = model(exp_imgs.to(device))
-    exp_idx = 0
+    exp_idx = 5
     fig, ax = plt.subplots(1, 5, figsize=(3 * 5, 3))
     for i in range(5):
         fused_patches = i * 0.25 * sim_patch_tokens + (4 - i) * 0.25 * exp_patch_tokens
@@ -1033,13 +1026,14 @@ def visualize_style_transfer(style_model, val_loader, device, save_dir, n_viz=5,
     style_model.eval()
     first_batch = next(iter(val_loader))
     fig, ax = plt.subplots(n_viz, 5, figsize=(3 * 5, 3 * n_viz))
+    sample_idx = 5
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     for state in states:
         for i in range(n_viz):
-            exp_img = first_batch['experimental'][i].unsqueeze(0) # style
-            shuffled_exp_img = first_batch['shuffled_exp'][i].unsqueeze(0) # style
-            sim_img = first_batch['simulation'][i].unsqueeze(0) # content
+            exp_img = first_batch['experimental'][sample_idx+i].unsqueeze(0) # style
+            shuffled_exp_img = first_batch['shuffled_exp'][sample_idx+i].unsqueeze(0) # style
+            sim_img = first_batch['simulation'][sample_idx+i].unsqueeze(0) # content
             pred_imgs = style_model(sim_img.to(device), exp_img.to(device))[0].permute(1, 2, 0).cpu().detach()
             shuffled_pred_imgs = style_model(sim_img.to(device), shuffled_exp_img.to(device))[0].permute(1, 2, 0).cpu().detach()
             print(f"pred_img[0] and shuffled_pred_imgs[0] is the same: {torch.allclose(pred_imgs[0], shuffled_pred_imgs[0])}")
