@@ -775,7 +775,6 @@ def main(config_path='config.yaml'):
     )
     # Compute feature similarity metrics
     #metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
-    
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
@@ -878,7 +877,7 @@ def main(config_path='config.yaml'):
         )
     if 0:
         visualize_reconstructed_images(model,
-            train_loader,
+            val_loader,
             device,
             save_dir=config['visualization']['reconstructed_images']['save_dir'],
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
@@ -886,35 +885,36 @@ def main(config_path='config.yaml'):
         )
     if 1:
         visualize_style_transfer(style_model,
-            train_loader,
+            val_loader,
             device,
             save_dir=config['visualization']['style_transfer']['save_dir'],
             n_viz=config['visualization']['style_transfer']['n_viz'],
             states=list(state_names.keys())
         )
-    style_model.eval()
-    first_batch = next(iter(val_loader))
-    all_content_features_cls = []
-    all_style_features_cls = []
-    all_recon_features_cls = []
-    for batch in val_loader:
-        content_features_cls = model.encoder(batch['simulation'].to(device))[0]
-        style_features_cls = model.encoder(batch['experimental'].to(device))[0]
-        recon = style_model(batch['simulation'].to(device), batch['experimental'].to(device))
-        recon_features_cls = model.encoder(recon.to(device))[0]
-        all_content_features_cls.append(content_features_cls)
-        all_style_features_cls.append(style_features_cls)
-        all_recon_features_cls.append(recon_features_cls.detach())
-    all_content_features_cls = torch.cat(all_content_features_cls, dim=0)
-    all_style_features_cls = torch.cat(all_style_features_cls, dim=0)
-    all_recon_features_cls = torch.cat(all_recon_features_cls, dim=0)
-    pca_results = visualize_pca(
-        all_content_features_cls.detach().cpu().numpy(), 
-        all_style_features_cls.detach().cpu().numpy(), 
-        all_recon_features_cls.detach().cpu().numpy(), 
-        labels=['Simulation', 'Experiment', 'Reconstructed'],
-        save_dir=config['training']['stage_2']['save_dir']
-    )
+    if 0:
+        style_model.eval()
+        first_batch = next(iter(val_loader))
+        all_content_features_cls = []
+        all_style_features_cls = []
+        all_recon_features_cls = []
+        for batch in val_loader:
+            content_features_cls = model.encoder(batch['simulation'].to(device))[0]
+            style_features_cls = model.encoder(batch['experimental'].to(device))[0]
+            recon = style_model(batch['simulation'].to(device), batch['experimental'].to(device))
+            recon_features_cls = model.encoder(recon.to(device))[0]
+            all_content_features_cls.append(content_features_cls)
+            all_style_features_cls.append(style_features_cls)
+            all_recon_features_cls.append(recon_features_cls.detach())
+        all_content_features_cls = torch.cat(all_content_features_cls, dim=0)
+        all_style_features_cls = torch.cat(all_style_features_cls, dim=0)
+        all_recon_features_cls = torch.cat(all_recon_features_cls, dim=0)
+        pca_results = visualize_pca(
+            all_content_features_cls.detach().cpu().numpy(), 
+            all_style_features_cls.detach().cpu().numpy(), 
+            all_recon_features_cls.detach().cpu().numpy(), 
+            labels=['Simulation', 'Experiment', 'Reconstructed'],
+            save_dir=config['training']['stage_2']['save_dir']
+        )
 
 def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5, states=list(state_names.keys())):
     print(f"Visualizing reconstructed images...")
