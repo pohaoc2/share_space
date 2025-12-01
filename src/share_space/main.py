@@ -334,7 +334,10 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
         print(f"all_sim shape: {all_sim.shape}, all_exp shape: {all_exp.shape}")
         all_content_patches = torch.cat(all_content_patches, dim=0)  # [B, N, D]
         all_style_patches = torch.cat(all_style_patches, dim=0)  # [B, N, D]
-        sample_idx = 3
+        #content_features_cls = all_content_patches.view(all_content_patches.shape[0], -1)
+        #style_features_cls = all_style_patches.view(all_style_patches.shape[0], -1)
+        print(f"all_content_patches shape: {all_content_patches.shape}, all_style_patches shape: {all_style_patches.shape}")
+        sample_idx = 5
         results = {}
         if verbose:
             print(f"Total samples - content_features_cls: {content_features_cls.shape}, style_features_cls: {style_features_cls.shape}")
@@ -343,9 +346,9 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
             content_norm = F.normalize(content_features_cls, p=2, dim=-1)
             style_norm = F.normalize(style_features_cls, p=2, dim=-1)
 
-            dist, pval = frechet_permutation_test(content_norm.cpu().numpy(), style_norm.cpu().numpy())
-            print(f"Frechet distance: {dist}")
-            print(f"Frechet permutation test p-value: {pval}")
+            #dist, pval = frechet_permutation_test(content_norm.cpu().numpy(), style_norm.cpu().numpy())
+            #print(f"Frechet distance: {dist}")
+            #print(f"Frechet permutation test p-value: {pval}")
 
             # Create figure with gridspec for custom layout
             if 0:
@@ -382,8 +385,6 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
                 # Bottom: reconstructed images
                 recon_sim = model.decoder(all_content_patches[sample_idx:sample_idx+1].to(device))
                 recon_exp = model.decoder(all_style_patches[sample_idx:sample_idx+1].to(device))
-
-
                 ax_sim = fig.add_subplot(gs[1, 0])
                 ax_sim.imshow(all_sim[sample_idx])
                 ax_sim.axis('off')
@@ -777,6 +778,24 @@ def main(config_path='config.yaml'):
     )
     # Compute feature similarity metrics
     #metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+    #asd()
+    # save the latent space
+    content_patch_tokens_list = []
+    style_patch_tokens_list = []
+    for batch in train_loader:
+        sim_images = batch['simulation'].to(device)
+        exp_images = batch['experimental'].to(device)
+        _, _, content_patch_tokens = model(sim_images)
+        _, _, style_patch_tokens = model(exp_images)
+        content_patch_tokens_list.append(content_patch_tokens.cpu().detach().numpy())
+        style_patch_tokens_list.append(style_patch_tokens.cpu().detach().numpy())
+    content_patch_tokens = np.concatenate(content_patch_tokens_list, axis=0)
+    style_patch_tokens = np.concatenate(style_patch_tokens_list, axis=0)
+    np.save(Path(config['training']['stage_1']['save_dir']) / f'content_patch_tokens.npy', content_patch_tokens)
+    np.save(Path(config['training']['stage_1']['save_dir']) / f'style_patch_tokens.npy', style_patch_tokens)
+    print(f"Content patch tokens shape: {content_patch_tokens.shape}")
+    print(f"Style patch tokens shape: {style_patch_tokens.shape}")
+    asd()
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
@@ -885,7 +904,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    if 1:
+    if 0:
         visualize_style_transfer(style_model,
             val_loader,
             device,
