@@ -795,7 +795,7 @@ def main(config_path='config.yaml'):
     np.save(Path(config['training']['stage_1']['save_dir']) / f'style_patch_tokens.npy', style_patch_tokens)
     print(f"Content patch tokens shape: {content_patch_tokens.shape}")
     print(f"Style patch tokens shape: {style_patch_tokens.shape}")
-    asd()
+
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
