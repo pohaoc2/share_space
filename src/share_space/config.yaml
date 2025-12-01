@@ -4,7 +4,7 @@ model:
   exp_chans: 3
   img_size: 240
   patch_size: 8
-  embed_dim: 64
+  embed_dim: 16
   depth: 2
   num_heads: 2
   decoder_type: conv  # Options: 'conv', 'transformer'
@@ -26,7 +26,7 @@ diffusion:
 # Training Parameters
 training:
   stage_1:
-    eval_only: true
+    eval_only: false
     epochs: 5
     learning_rate: 0.0001
     weight_decay: 0.05
@@ -60,7 +60,7 @@ loss:
   content_weight: 0.0
   style_weight: 0.0
   element_weight: 0.0
-  image_weight: 1.0
+  image_weight: 10.0
   fused_patches_weight: 1.0
 # Data Configuration
 data:
