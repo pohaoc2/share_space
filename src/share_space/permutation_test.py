@@ -180,7 +180,7 @@ def frechet_permutation_test_animated(
     
     # Setup figure with broken axis for histogram
     fig = plt.figure(figsize=figsize)
-    x_ranges = [(-0.1, 0.5), (3, 3.5)]
+    x_ranges = [(-0.1, 1)]
     
     # Create broken axis for histogram (left side, takes ~45% of width) # left, bottom, width, height
     hist_axes = setup_broken_axis_histogram(fig, pos=(0.1, 0.15, 0.38, 0.75), x_ranges=x_ranges)
@@ -241,9 +241,9 @@ def frechet_permutation_test_animated(
             
             # Set labels and title
             hist_axes[0].set_ylabel('Frequency', fontsize=12)
-            hist_axes[-1].set_xlabel('Fréchet Distance', fontsize=12, x=-0.15)
+            hist_axes[-1].set_xlabel('Fréchet Distance', fontsize=12)#, x=-0.15)
             hist_axes[0].set_title(f'Permutation (n={len(perm_distances)}/{n_perms})', 
-                         fontsize=12, fontweight='bold', x=0.9)
+                         fontsize=12, fontweight='bold')#, x=0.9)
             
             # Ensure y-axis is hidden for second histogram
             if len(hist_axes) > 1:
@@ -259,8 +259,8 @@ def frechet_permutation_test_animated(
             # Use first two dimensions for scatter plot
             if current_A.shape[1] >= 2:
                 ax2.scatter(current_A[:, 0], current_A[:, 1], s=50,
-                            facecolors='none', edgecolors='#AAAAAA', marker='o', linewidths=1.5,
-                            label='Simulation')
+                            facecolors='none', edgecolors='green', marker='^', linewidths=1.5,
+                            label='Fuse reconstructed')
                 ax2.scatter(current_B[:, 0], current_B[:, 1], s=50, marker='s',
                             facecolors='none', edgecolors='#993F71', linewidths=1.5,
                             label='Experimental')
@@ -335,7 +335,7 @@ def create_static_summary_plot(
     
     # Create figure
     fig = plt.figure(figsize=figsize)
-    x_ranges = [(-0.1, 0.5), (3, 3.5)]
+    x_ranges = [(-0.1, 1)]
     
     # Create broken axis for histogram (left side, takes ~45% of width) # left, bottom, width, height
     hist_axes = setup_broken_axis_histogram(fig, pos=(0.1, 0.15, 0.38, 0.75), x_ranges=x_ranges)
@@ -364,8 +364,8 @@ def create_static_summary_plot(
         hist_axes[i].set_xlim(xmin, xmax)
     
     hist_axes[0].set_ylabel('Frequency', fontsize=11)
-    hist_axes[-1].set_xlabel('Fréchet Distance', fontsize=11, x=-0.15)
-    hist_axes[0].set_title('Permutation Distribution', fontsize=12, fontweight='bold', x=0.9)
+    hist_axes[-1].set_xlabel('Fréchet Distance', fontsize=11)#, x=-0.15)
+    hist_axes[0].set_title('Permutation Distribution', fontsize=12, fontweight='bold')#, x=0.9)
     
     # Ensure y-axis is hidden for second histogram
     if len(hist_axes) > 1:

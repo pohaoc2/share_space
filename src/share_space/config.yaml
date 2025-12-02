@@ -38,7 +38,7 @@ training:
     use_diffusion: false
     run_final_eval: false
   stage_2:
-    eval_only: false
+    eval_only: true
     epochs: 3
     learning_rate: 0.001
     weight_decay: 0.05

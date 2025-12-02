@@ -210,25 +210,27 @@ def visualize_pca(*feature_sets, save_dir=None, labels=None, colors=None, marker
         latents_pca[label] = latents_pca_np[label].tolist()
     
     # Create scatter plot
+    sample_idx = 5
     fig, ax = plt.subplots(1, 1, figsize=(4, 3.75))
     
-    # Plot all samples except first (hollow markers)
     for i, (label, color, marker) in enumerate(zip(labels, colors, markers)):
         latents = latents_pca_np[label]
         if len(latents) > 1:
             ax.scatter(
-                latents[1:, 0], latents[1:, 1],
+                latents[:sample_idx-1, 0], latents[:sample_idx-1, 1],
                 facecolors='none', edgecolors=color, marker=marker, label=label, s=40
             )
+            ax.scatter(
+                latents[sample_idx+1:, 0], latents[sample_idx+1:, 1],
+                facecolors='none', edgecolors=color, marker=marker, s=40
+            )
         elif len(latents) == 1:
-            # If only one sample, plot it as filled
             ax.scatter(
                 latents[0:1, 0], latents[0:1, 1],
                 facecolors=color, edgecolors='black', marker=marker, label=label, s=70
             )
     
     # Plot first sample of each set (filled markers with black edge)
-    sample_idx = 5
     for i, (label, color, marker) in enumerate(zip(labels, colors, markers)):
         latents = latents_pca_np[label]
         if len(latents) > 0:
@@ -265,12 +267,15 @@ def visualize_pca(*feature_sets, save_dir=None, labels=None, colors=None, marker
         'explained_variance_ratio': pca.explained_variance_ratio_.tolist(),
         'latents_pca': latents_pca
     }
-    
+    plt.close()
     # Backward compatibility: add old keys for 2-feature case
     if len(feature_sets) == 2:
         result['content_latents_pca'] = latents_pca[labels[0]]
         result['style_latents_pca'] = latents_pca[labels[1]]
-    
+    elif len(feature_sets) == 3:
+        result['content_latents_pca'] = latents_pca[labels[0]]
+        result['style_latents_pca'] = latents_pca[labels[1]]
+        result['reconstructed_latents_pca'] = latents_pca[labels[2]]
     return result
 
 def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verbose=True):
@@ -825,13 +830,14 @@ def main(config_path='config.yaml'):
             output_path='frechet_permutation_summary.png',
             n_bins=20
         )
-    if config['training']['stage_1']['eval_only']:
-        content_patch_tokens = np.load(Path(config['training']['stage_1']['save_dir']) / f'content_patch_tokens.npy')
-        style_patch_tokens = np.load(Path(config['training']['stage_1']['save_dir']) / f'style_patch_tokens.npy')
-    else:
-        content_patch_tokens, style_patch_tokens = save_patch_tokens(model, train_loader, config, device)
-    print(f"Content patch tokens shape: {content_patch_tokens.shape}")
-    print(f"Style patch tokens shape: {style_patch_tokens.shape}")
+    if 0:
+        if config['training']['stage_1']['eval_only']:
+            content_patch_tokens = np.load(Path(config['training']['stage_1']['save_dir']) / f'content_patch_tokens.npy')
+            style_patch_tokens = np.load(Path(config['training']['stage_1']['save_dir']) / f'style_patch_tokens.npy')
+        else:
+            content_patch_tokens, style_patch_tokens = save_patch_tokens(model, train_loader, config, device)
+        print(f"Content patch tokens shape: {content_patch_tokens.shape}")
+        print(f"Style patch tokens shape: {style_patch_tokens.shape}")
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
@@ -932,7 +938,7 @@ def main(config_path='config.yaml'):
             device=device,
             run_final_eval=True  # Set to True to run final evaluation and visualization
         )
-    if 1:
+    if 0:
         visualize_reconstructed_images(model,
             val_loader,
             device,
@@ -940,7 +946,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    if 1:
+    if 0:
         visualize_style_transfer(style_model,
             val_loader,
             device,
@@ -954,24 +960,72 @@ def main(config_path='config.yaml'):
         all_content_features_cls = []
         all_style_features_cls = []
         all_recon_features_cls = []
+        all_content_features_patches = []
+        all_style_features_patches = []
+        all_recon_features_patches = []
+        sample_idx = 5
         for batch in val_loader:
-            content_features_cls = model.encoder(batch['simulation'].to(device))[0]
-            style_features_cls = model.encoder(batch['experimental'].to(device))[0]
+            content_features_cls, content_features_patches = model.encoder(batch['simulation'].to(device))
+            style_features_cls, style_features_patches = model.encoder(batch['experimental'].to(device))
             recon = style_model(batch['simulation'].to(device), batch['experimental'].to(device))
-            recon_features_cls = model.encoder(recon.to(device))[0]
+            recon_features_cls, recon_features_patches = model.encoder(recon.to(device))
             all_content_features_cls.append(content_features_cls)
             all_style_features_cls.append(style_features_cls)
-            all_recon_features_cls.append(recon_features_cls.detach())
+            all_recon_features_cls.append(recon_features_cls)
+            all_content_features_patches.append(content_features_patches)
+            all_style_features_patches.append(style_features_patches)
+            all_recon_features_patches.append(recon_features_patches)
         all_content_features_cls = torch.cat(all_content_features_cls, dim=0)
         all_style_features_cls = torch.cat(all_style_features_cls, dim=0)
         all_recon_features_cls = torch.cat(all_recon_features_cls, dim=0)
+        all_content_features_patches = torch.cat(all_content_features_patches, dim=0)
+        all_style_features_patches = torch.cat(all_style_features_patches, dim=0)
+        all_recon_features_patches = torch.cat(all_recon_features_patches, dim=0)
+        recon_style = model.decoder(all_style_features_patches.to(device))
+        recon_style_cls, _ = model.encoder(recon_style.to(device))
         pca_results = visualize_pca(
             all_content_features_cls.detach().cpu().numpy(), 
             all_style_features_cls.detach().cpu().numpy(), 
-            all_recon_features_cls.detach().cpu().numpy(), 
+            recon_style_cls.detach().cpu().numpy(), 
             labels=['Simulation', 'Experiment', 'Reconstructed'],
             save_dir=config['training']['stage_2']['save_dir']
         )
+        fused_latents = np.array(pca_results['reconstructed_latents_pca'])
+        experimental_latents = np.array(pca_results['style_latents_pca'])
+        obs, pval = frechet_permutation_test_animated(
+            fused_latents, experimental_latents, 
+            n_perms=300, 
+            seed=42,
+            figsize=(8, 3.75),
+            output_path='frechet_permutation_test_recon_style_style.gif',
+            fps=15,
+            n_bins=20
+        )
+        create_static_summary_plot(
+            fused_latents, experimental_latents,
+            n_perms=300,
+            seed=42,
+            figsize=(8, 3.75),
+            output_path='frechet_permutation_summary_recon_style_style.png',
+            n_bins=20
+        )
+
+        fig, ax = plt.subplots(1, 3)  # Sim, Exp, Reconstructed
+        recon_sim = model.decoder(all_content_features_patches[sample_idx:sample_idx+1].to(device))[0]
+        recon_exp = model.decoder(all_style_features_patches[sample_idx:sample_idx+1].to(device))[0]
+        recon_recon = model.decoder(all_recon_features_patches[sample_idx:sample_idx+1].to(device))[0]
+        ax[0].imshow(inverse_transform(recon_sim.permute(1, 2, 0).cpu().detach().numpy()))
+        ax[1].imshow(inverse_transform(recon_exp.permute(1, 2, 0).cpu().detach().numpy()))
+        ax[2].imshow(inverse_transform(recon_recon.permute(1, 2, 0).cpu().detach().numpy()))
+        ax[0].axis('off')
+        ax[1].axis('off')
+        ax[2].axis('off')
+        plt.tight_layout()
+        plt.savefig(Path(config['training']['stage_2']['save_dir']) / f'pca_visualization_sample_{sample_idx}.png',
+        dpi=300,
+        bbox_inches='tight',
+        transparent=True)
+        #plt.show()
 
 def visualize_reconstructed_images(model, val_loader, device, save_dir, n_viz=5, states=list(state_names.keys())):
     print(f"Visualizing reconstructed images...")
