@@ -1,29 +1,31 @@
 import yaml
+import os
+import copy
 from pathlib import Path
 import json
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.optim as optim
+import torch.nn.functional as F
+from sklearn.decomposition import PCA
 from share_space.models.sim2exp_model import Sim2ExpModel, StyleTransferModel
 from share_space.train import TeacherStudentTrainer
 from share_space.loss import Sim2ExpLoss, StyleTransferLoss
 from share_space.dataset import get_dummy_dataloaders, get_real_dataloaders
-#from share_space.dataset_real import get_real_dataloaders
 from share_space.evaluation import MetricsEvaluator
 from share_space.train_style import StyleTransferTrainer
 from share_space.models.decoders import ConvDecoder, TransformerDecoder
-import copy
 from share_space.diffusion import DiffusionModel
 from share_space.trainer_diffusion import LatentDiffusionTrainer
 from share_space.models.adain import AdaINFusion#, HistoAdaIN
 from share_space.adain_histo import HistoAdaINSpatialAware, HistoAdaIN, HistoAdaINHybrid, WeightedAdaIN, LearnableAdaIN, FusionModule
 from share_space.latent_adapter import LatentDomainAdapter
 from share_space.latent_adapter import train_epoch as train_latent_adapter_epoch
-import os
-import torch.nn.functional as F
-import numpy as np
-from sklearn.decomposition import PCA
-from share_space.evaluation import frechet_permutation_test, frechet_distance
+from share_space.permutation_test import frechet_permutation_test_animated, create_static_summary_plot
+
+
+
 state_names = {
     0: 'Cell Count',
     # 1: 'OTHER',
@@ -346,10 +348,13 @@ def compute_feature_similarity_metrics(model, val_loader, save_dir, device, verb
             content_norm = F.normalize(content_features_cls, p=2, dim=-1)
             style_norm = F.normalize(style_features_cls, p=2, dim=-1)
 
-            #dist, pval = frechet_permutation_test(content_norm.cpu().numpy(), style_norm.cpu().numpy())
-            #print(f"Frechet distance: {dist}")
-            #print(f"Frechet permutation test p-value: {pval}")
-
+            dist, pval = frechet_permutation_test(content_norm.cpu().numpy(), style_norm.cpu().numpy())
+            print(f"Frechet distance: {dist}")
+            print(f"Frechet permutation test p-value: {pval}")
+            if pval < 0.05:
+                print("Statistically significant difference between distributions (p < 0.05)")
+            else:
+                print("No statistically significant difference (p >= 0.05)")
             # Create figure with gridspec for custom layout
             if 0:
                 fig = plt.figure(figsize=(16, 8))
@@ -712,6 +717,28 @@ def _get_stage_2_model(config, device, stage_name, feature_extractor):
 def inverse_transform(img):
     return (img*0.5) + 0.5
 
+def save_patch_tokens(model, train_loader, config, device):
+    """
+    Extracts content and style patch tokens from the entire train_loader using the model,
+    and saves them as .npy files in the specified save_dir.
+    """
+    content_patch_tokens_list = []
+    style_patch_tokens_list = []
+    for batch in train_loader:
+        sim_images = batch['simulation'].to(device)
+        exp_images = batch['experimental'].to(device)
+        _, _, content_patch_tokens = model(sim_images)
+        _, _, style_patch_tokens = model(exp_images)
+        content_patch_tokens_list.append(content_patch_tokens.cpu().detach().numpy())
+        style_patch_tokens_list.append(style_patch_tokens.cpu().detach().numpy())
+    content_patch_tokens = np.concatenate(content_patch_tokens_list, axis=0)
+    style_patch_tokens = np.concatenate(style_patch_tokens_list, axis=0)
+    save_dir = Path(config['training']['stage_1']['save_dir'])
+    np.save(save_dir / f'content_patch_tokens.npy', content_patch_tokens)
+    np.save(save_dir / f'style_patch_tokens.npy', style_patch_tokens)
+    return content_patch_tokens, style_patch_tokens
+
+
 def main(config_path='config.yaml'):
     # Load configuration
     config = load_config(config_path)
@@ -777,25 +804,34 @@ def main(config_path='config.yaml'):
         run_final_eval=True  # Set to True to run final evaluation and visualization
     )
     # Compute feature similarity metrics
-    #metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
-    #asd()
-    # save the latent space
-    content_patch_tokens_list = []
-    style_patch_tokens_list = []
-    for batch in train_loader:
-        sim_images = batch['simulation'].to(device)
-        exp_images = batch['experimental'].to(device)
-        _, _, content_patch_tokens = model(sim_images)
-        _, _, style_patch_tokens = model(exp_images)
-        content_patch_tokens_list.append(content_patch_tokens.cpu().detach().numpy())
-        style_patch_tokens_list.append(style_patch_tokens.cpu().detach().numpy())
-    content_patch_tokens = np.concatenate(content_patch_tokens_list, axis=0)
-    style_patch_tokens = np.concatenate(style_patch_tokens_list, axis=0)
-    np.save(Path(config['training']['stage_1']['save_dir']) / f'content_patch_tokens.npy', content_patch_tokens)
-    np.save(Path(config['training']['stage_1']['save_dir']) / f'style_patch_tokens.npy', style_patch_tokens)
+    if 0:
+        metrics = compute_feature_similarity_metrics(model, val_loader, save_dir=config['training']['stage_1']['save_dir'], device=device)
+        content_latents = np.array(metrics['pca']['content_latents_pca'])
+        style_latents = np.array(metrics['pca']['style_latents_pca'])
+        obs, pval = frechet_permutation_test_animated(
+            content_latents, style_latents, 
+            n_perms=300, 
+            seed=42,
+            figsize=(8, 3.75),
+            output_path='frechet_permutation_test.gif',
+            fps=15,
+            n_bins=20
+        )
+        create_static_summary_plot(
+            content_latents, style_latents,
+            n_perms=300,
+            seed=42,
+            figsize=(8, 3.75),
+            output_path='frechet_permutation_summary.png',
+            n_bins=20
+        )
+    if config['training']['stage_1']['eval_only']:
+        content_patch_tokens = np.load(Path(config['training']['stage_1']['save_dir']) / f'content_patch_tokens.npy')
+        style_patch_tokens = np.load(Path(config['training']['stage_1']['save_dir']) / f'style_patch_tokens.npy')
+    else:
+        content_patch_tokens, style_patch_tokens = save_patch_tokens(model, train_loader, config, device)
     print(f"Content patch tokens shape: {content_patch_tokens.shape}")
     print(f"Style patch tokens shape: {style_patch_tokens.shape}")
-
     if 0: # latent adapter training
         latent_adapter = LatentDomainAdapter(
             feature_extractor=model.encoder,
@@ -904,7 +940,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['reconstructed_images']['n_viz'],
             states=list(state_names.keys())
         )
-    if 0:
+    if 1:
         visualize_style_transfer(style_model,
             val_loader,
             device,
@@ -912,7 +948,7 @@ def main(config_path='config.yaml'):
             n_viz=config['visualization']['style_transfer']['n_viz'],
             states=list(state_names.keys())
         )
-    if 0:
+    if 1:
         style_model.eval()
         first_batch = next(iter(val_loader))
         all_content_features_cls = []

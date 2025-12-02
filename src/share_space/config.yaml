@@ -39,14 +39,14 @@ training:
     run_final_eval: false
   stage_2:
     eval_only: false
-    epochs: 0
+    epochs: 3
     learning_rate: 0.001
     weight_decay: 0.05
     teacher_momentum: 0.996
     mask_ratio: 0.5
     use_content_residual: true
     save_dir: ./checkpoints/stage_2
-    load_path: ./checkpoints/stage_2/best_model_stage_2_low.pth
+    load_path: ./checkpoints/stage_2/best_model.pth
     eval_every: 3
     use_diffusion: false
     run_final_eval: false
