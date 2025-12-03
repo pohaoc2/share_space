@@ -2,13 +2,15 @@
 Visualization of Fréchet Distance Permutation Test
 Creates an animated GIF showing the distribution of permuted distances
 """
+from typing import Tuple, Optional
+import warnings
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.patches import Rectangle
 from scipy import linalg
-from typing import Tuple, Optional
-import warnings
+
 warnings.filterwarnings('ignore')
 
 
@@ -134,7 +136,7 @@ def frechet_permutation_test_animated(
     Y, 
     n_perms=200, 
     seed=0,
-    output_path='frechet_permutation_test.gif',
+    save_dir=None,
     fps=10,
     figsize=(8, 3.75),
     n_bins=30
@@ -150,7 +152,7 @@ def frechet_permutation_test_animated(
         Number of permutations
     seed : int
         Random seed for reproducibility
-    output_path : str
+    save_dir : str
         Path to save the animated GIF
     fps : int
         Frames per second for the animation
@@ -280,7 +282,7 @@ def frechet_permutation_test_animated(
     
     # Save as GIF
     writer = PillowWriter(fps=fps)
-    anim.save(output_path, writer=writer)
+    anim.save(Path(save_dir) / 'frechet_permutation_test.gif', writer=writer)
     plt.close()
     
     # Calculate final p-value
@@ -296,7 +298,7 @@ def frechet_permutation_test_animated(
     print(f"p-value: {pval:.6f}")
     print(f"Significant at α=0.05: {'Yes' if pval < 0.05 else 'No'}")
     print(f"{'='*60}")
-    print(f"\nAnimation saved to: {output_path}")
+    print(f"\nAnimation saved to: {Path(save_dir) / 'frechet_permutation_test.gif'}")
     
     return obs_distance, pval
 
@@ -306,7 +308,7 @@ def create_static_summary_plot(
     Y,
     n_perms=200,
     seed=0,
-    output_path='frechet_permutation_summary.png',
+    save_dir=None,
     figsize=(7, 3.75),
     n_bins=30
 ):
@@ -385,10 +387,10 @@ def create_static_summary_plot(
     ax2.legend(fontsize=10)
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(Path(save_dir) / 'frechet_permutation_summary.png', dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"Summary plot saved to: {output_path}")
+    print(f"Summary plot saved to: {Path(save_dir) / 'frechet_permutation_summary.png'}")
     
     return obs_distance, pval
 

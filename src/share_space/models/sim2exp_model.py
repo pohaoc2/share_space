@@ -4,7 +4,6 @@ import torch.nn as nn
 from typing import Tuple, Optional
 from share_space.models.vit import VisionTransformer
 from share_space.models.decoders import ConvDecoder, TransformerDecoder
-from share_space.models.adain import AdaINFusion
 import torch.nn.functional as F
 
 class Sim2ExpModel(nn.Module):
@@ -115,7 +114,7 @@ class Sim2ExpModel(nn.Module):
 
 class StyleTransferModel(nn.Module):
     """Complete model for style transfer"""
-    def __init__(self, feature_extractor: nn.Module, decoder: nn.Module, adain: AdaINFusion):
+    def __init__(self, feature_extractor: nn.Module, decoder: nn.Module, adain):
         super().__init__()
         self.encoder = feature_extractor # frozen
         for param in self.encoder.parameters():
