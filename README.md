@@ -1,5 +1,9 @@
+<<<<<<< HEAD
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/StyDiff/src/share_space/main_colab.ipynb)
 
+=======
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/dev/src/share_space/main_colab.ipynb)
+>>>>>>> dev
 
 # Python project template repository
 

@@ -17,7 +17,9 @@ dependencies = [
     "matplotlib (>=3.10.7,<4.0.0)",
     "tqdm (>=4.67.1,<5.0.0)",
     "black (>=25.9.0,<26.0.0)",
-    "pytorch-msssim (>=1.0.0,<2.0.0)"
+    "pytorch-msssim (>=1.0.0,<2.0.0)",
+    "scikit-learn (>=1.7.2,<2.0.0)",
+    "wandb (>=0.23.0,<0.24.0)"
 ]
 
 

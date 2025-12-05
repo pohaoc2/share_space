@@ -114,6 +114,12 @@ def get_dummy_dataloaders(batch_size: int = 32, num_workers: int = 4, img_size: 
     
     return train_loader, val_loader
 
+class InvertNonZero:
+    """Custom transform to invert non-zero values while keeping background at 0"""
+    def __call__(self, x):
+        return torch.where(x == 0, 1, x)
+        #return torch.where(x == 0, torch.zeros_like(x), 1 - x)
+
 class SimExpPairedDataset(Dataset):
     """Dataset for paired simulation and experimental images"""
     
@@ -150,7 +156,8 @@ class SimExpPairedDataset(Dataset):
                  sim_dir: str = "sim", 
                  img_size: int = 224,
                  transform: Optional[T.Compose] = None,
-                 debugging: bool = False):
+                 debugging: bool = False,
+                 seed: Optional[int] = None):
         """
         Args:
             exp_dir: Directory containing experimental images
@@ -163,6 +170,7 @@ class SimExpPairedDataset(Dataset):
         self.sim_dir = Path(sim_dir)
         self.img_size = img_size
         self.debugging = debugging
+        self.seed = seed
         self.exp_transform = T.Compose([
             T.Resize((img_size, img_size)),
             T.ToTensor(),
@@ -170,7 +178,8 @@ class SimExpPairedDataset(Dataset):
         ])
         self.count_transform = T.Compose([
             T.Resize((img_size, img_size)),
-            T.ToTensor(),
+            T.ToTensor(),  # Converts to [0, 1]
+            InvertNonZero(),
             T.Normalize(mean=[0.5], std=[0.5])  # Normalize to [-1, 1]
         ])
         # State channel: convert to one-hot encoding
@@ -214,7 +223,7 @@ class SimExpPairedDataset(Dataset):
             else:
                 print(f"Warning: Missing simulation files for {exp_path.name}")
         
-        return pairs
+        return pairs[:]
     
     def _rgb_to_state_index(self, rgb_image: np.ndarray) -> np.ndarray:
         """
@@ -252,13 +261,19 @@ class SimExpPairedDataset(Dataset):
     
     def __getitem__(self, idx: int) -> dict:
         exp_path, sim_state_path, sim_count_path = self.pairs[idx]
-        
+        rng = torch.Generator()
+        if hasattr(self, 'seed') and self.seed is not None:
+            rng.manual_seed(self.seed)
+        shuffled_idx = torch.randperm(len(self.pairs), generator=rng)[idx]
+        shuffled_exp_path, shuffled_sim_state_path, shuffled_sim_count_path = self.pairs[shuffled_idx]
+        shuffled_exp_img = Image.open(shuffled_exp_path).convert('RGB')
+        shuffled_exp_tensor = self.exp_transform(shuffled_exp_img)  # (3, H, W), normalized to [-1, 1]
         # Load experimental image (RGB)
         exp_img = Image.open(exp_path).convert('RGB')
         exp_tensor = self.exp_transform(exp_img)  # (3, H, W), normalized to [-1, 1]
         
         # Load simulation count (grayscale, continuous [0, 1])
-        sim_count = Image.open(sim_count_path).convert('L')
+        sim_count = Image.open(sim_count_path).convert('RGB')
         sim_count_tensor = self.count_transform(sim_count)  # (1, H, W), normalized to [-1, 1]
         
         # Load simulation state (RGB, categorical)
@@ -284,7 +299,8 @@ class SimExpPairedDataset(Dataset):
         sim_tensor = sim_tensor[:1]
         return {
             'experimental': exp_tensor,      # (3, H, W), RGB normalized to [-1, 1]
-            'simulation': sim_tensor,        # (8, H, W), count + 7 one-hot state channels
+            'simulation': sim_tensor[:3],        # (8, H, W), count + 7 one-hot state channels
+            'shuffled_exp': shuffled_exp_tensor,
             'exp_path': str(exp_path),
             'sim_state_path': str(sim_state_path),
             'sim_count_path': str(sim_count_path)
@@ -294,7 +310,7 @@ def get_real_dataloaders(
     exp_dir: str = "exp",
     sim_dir: str = "sim",
     batch_size: int = 32,
-    num_workers: int = 4,
+    num_workers: int = 2,
     img_size: int = 224,
     train_split: float = 0.9,
     seed: int = 42,
