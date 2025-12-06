@@ -1,9 +1,4 @@
-<<<<<<< HEAD
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/StyDiff/src/share_space/main_colab.ipynb)
-
-=======
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/dev/src/share_space/main_colab.ipynb)
->>>>>>> dev
 
 # Python project template repository
 
@@ -15,83 +10,61 @@
 [![Version](https://bagherilab.github.io/python_project_template/_badges/version.svg)](https://pypi.org/project/python_project_template/)
 [![License](https://bagherilab.github.io/python_project_template/_badges/license.svg)](https://github.com/bagherilab/python_project_template/blob/main/LICENSE)
 
-# Simulation to Experiment Image Transfer using ViT
-
-This implementation uses a Vision Transformer-based teacher-student framework inspired by DINOv2 to transfer simulation images to experiment-like images.
-
-## Architecture
-
-### Key Components:
-
-1. **ViT Encoder**: Extracts features using Vision Transformer (pretrained on ImageNet)
-2. **Generator Head**: Transforms features back to images using transformer decoder
-3. **Teacher-Student Framework**: 
-   - Student generates exp-like images from simulation
-   - Teacher processes real experiment images
-   - Teacher updated via EMA of student
-4. **Multi-component Loss**:
-   - Feature alignment (distillation loss)
-   - Pixel reconstruction (L1 loss)
-   - Perceptual loss (patch-wise comparison)
-
-## Setup
+## Installation
 ```bash
 # Install dependencies
-pip install torch torchvision timm scipy pillow matplotlib tqdm numpy
+poetry install
 
-# Create dummy data (or use your own)
-python example_usage.py
-
-# Train model
-python sim2exp_transfer.py
+# Activate environments
+source $(poetry env info --path)/bin/activate
 ```
 
-## Using Your Own Data
+## Architecture
+### Stage 1
+- Encoder: Vision transformer
+- Decoder: Convolutional neural network
+### Stage 2
+- Style transfer: Adain
 
+## Data availability
+### Use example dataset
+1. Download [exp.zip](https://drive.google.com/file/d/1rAd7nMFZQJce3i_0IJL4dvClRiWeFAm7/view?usp=sharing) and [sim.zip](https://drive.google.com/file/d/1aOJuoAfKQjQwc5d4s_nRV6T67pHZqyJG/view?usp=sharing)
+2. Unzip them in the `data/` folder
+3. Ensure the data path in the `src/share_space/config.yaml` pointing to the correct location
+### Or, use your own data
 Organize your data as:
+- TODO: make the naming convention more generalizable
 ```
 data/
 ├── simulation/
-│   ├── sim_0001.png
-│   ├── sim_0002.png
+│   ├── train_<wsl_index_1>_<patch_index_1>.png
+│   ├── train_<wsl_index_1>_<patch_index_2>.png
+│   ├── ...
+│   ├── train_<wsl_index_2>_<patch_index_1>.png
 │   └── ...
 └── experiment/
-    ├── exp_0001.png
-    ├── exp_0002.png
-    └── ...
+│   ├── train_<wsl_index_1>_<patch_index_1>.png
+│   ├── train_<wsl_index_1>_<patch_index_2>.png
+│   ├── ...
+│   ├── train_<wsl_index_2>_<patch_index_1>.png
+│   └── ...
 ```
 
-Images should be paired (same filename index).
+## Running the code
 
-## Training
-
-The model trains using:
-- **Pretrained ViT**: Better initialization (ImageNet weights)
-- **Teacher-Student**: Teacher guides student via feature matching
-- **EMA Update**: Teacher = exponential moving average of student
-- **Multi-loss**: Balances feature alignment and image quality
-
-## Evaluation
-
-- **FID Score**: Measures distribution similarity between generated and real images
-  - FID < 10: Excellent
-  - FID < 50: Good
-  - FID < 100: Acceptable
-  
-- **Visual Comparison**: Side-by-side comparison of sim/generated/real
-
-## Customization
-
-Adjust hyperparameters in `main()`:
+1. Adjust hyperparameters in `src/share_space/config.yaml`:
 - `batch_size`: Batch size (default: 16)
 - `num_epochs`: Training epochs (default: 50)
 - `lr`: Learning rate (default: 1e-4)
-- Loss weights in `Sim2ExpLoss`
 
-## Results
+2. Run the pipeline:
+```
+$ python3 main.py
+```
 
-After training, you'll get:
-- `checkpoints/best_model.pth`: Best model weights
-- `training_curves.png`: Training progress
-- `comparison_results.png`: Visual comparison
-- FID score printed to console
+
+## Example output Results
+- TODO: Paste example output from console
+- `checkpoints/best_model.pth`: Best model weights (TODO: modify for stage 1 and 2)
+- `visualization/reconstructed.png`: (TODO: modify for stage 1 and 2)
+- Hand-on starter code notebook: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/dev/src/share_space/main_colab.ipynb)
