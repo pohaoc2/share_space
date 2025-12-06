@@ -1,5 +1,3 @@
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/dev/src/share_space/main_colab.ipynb)
-
 # Python project template repository
 
 [![Build status](https://bagherilab.github.io/python_project_template/_badges/build.svg)](https://github.com/bagherilab/python_project_template/actions?query=workflow%3Abuild)
@@ -53,8 +51,8 @@ data/
 ## Running the code
 
 1. Adjust hyperparameters in `src/share_space/config.yaml`:
-- `batch_size`: Batch size (default: 16)
-- `num_epochs`: Training epochs (default: 50)
+- `batch_size`: Batch size (default: 8)
+- `num_epochs`: Training epochs (default: 5)
 - `lr`: Learning rate (default: 1e-4)
 
 2. Run the pipeline:
@@ -67,4 +65,4 @@ $ python3 main.py
 - TODO: Paste example output from console
 - `checkpoints/best_model.pth`: Best model weights (TODO: modify for stage 1 and 2)
 - `visualization/reconstructed.png`: (TODO: modify for stage 1 and 2)
-- Hand-on starter code notebook: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/dev/src/share_space/main_colab.ipynb)
+- Hand-on starter code notebook: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/dev/src/share_space/main_colab.ipynb) (Suggested using GPUs runtime to save training time)
