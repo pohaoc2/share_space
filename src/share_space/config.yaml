@@ -27,7 +27,7 @@ diffusion:
 training:
   stage_1:
     eval_only: false
-    epochs: 5
+    epochs: 1
     learning_rate: 0.0001
     weight_decay: 0.05
     teacher_momentum: 0.996
@@ -39,7 +39,7 @@ training:
     run_final_eval: false
   stage_2:
     eval_only: false
-    epochs: 5
+    epochs: 1
     learning_rate: 0.001
     weight_decay: 0.05
     teacher_momentum: 0.996
