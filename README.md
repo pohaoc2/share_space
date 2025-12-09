@@ -65,4 +65,4 @@ $ python3 main.py
 - TODO: Paste example output from console
 - `checkpoints/best_model.pth`: Best model weights (TODO: modify for stage 1 and 2)
 - `visualization/reconstructed.png`: (TODO: modify for stage 1 and 2)
-- Hand-on starter code notebook: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/dev/src/share_space/main_colab.ipynb) (Suggested using GPUs runtime to save training time)
+- Hand-on starter code notebook: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/share_space/blob/main/src/share_space/main_colab.ipynb) (Suggested using GPUs runtime to save training time)
