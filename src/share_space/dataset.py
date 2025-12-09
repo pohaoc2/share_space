@@ -206,7 +206,7 @@ class SimExpPairedDataset(Dataset):
         
         # Get all experimental images
         exp_images = sorted(self.exp_dir.glob("train_*.png"))
-        for exp_path in exp_images[:]:
+        for exp_path in exp_images:
             # Extract the base name: train_{number}_{sub_image_number}
             match = re.match(r'train_(\d+)_(\d+)\.png', exp_path.name)
             if not match:
@@ -296,7 +296,7 @@ class SimExpPairedDataset(Dataset):
         
         # Combine: (1, H, W) + (7, H, W) = (8, H, W)
         sim_tensor = torch.cat([sim_count_tensor, sim_state_onehot], dim=0)
-        sim_tensor = sim_tensor[:1]
+        
         return {
             'experimental': exp_tensor,      # (3, H, W), RGB normalized to [-1, 1]
             'simulation': sim_tensor[:3],        # (8, H, W), count + 7 one-hot state channels
@@ -374,48 +374,3 @@ def get_real_dataloaders(
     print(f"Validation samples: {len(val_dataset)}")
     
     return train_loader, val_loader
-
-
-# Example usage:
-if __name__ == "__main__":
-    train_loader, val_loader = get_real_dataloaders(
-        exp_dir="../../data/exp",
-        sim_dir="../../data/sim",
-        batch_size=32,
-        num_workers=4,
-        img_size=224,
-        train_split=0.9
-    )
-    state_names = {
-        1: 'OTHER',
-        2: 'INFLAMMATORY',
-        3: 'HEALTHY_EPITHELIAL',
-        4: 'DYSPLASTIC/MALIGNANT',
-        5: 'FIBROBLAST',
-        6: 'MUSCLE',
-        7: 'ENDOTHELIAL'
-    }
-    # Test loading a batch
-    batch = next(iter(train_loader))
-    print(f"Experimental batch shape: {batch['experimental'].shape}")  # [32, 3, 224, 224]
-    print(f"Simulation batch shape: {batch['simulation'].shape}")      # [32, 2, 224, 224]
-    n_viz = 3
-    # Viz the {n_viz} samples from the first batch
-    first_batch = next(iter(train_loader))
-    fig, ax = plt.subplots(n_viz, 9, figsize=(2 * 8, 2 * n_viz))
-    for i in range(n_viz):
-        exp_img = first_batch['experimental'][i].permute(1, 2, 0).cpu().numpy()
-        sim_img = first_batch['simulation'][i].permute(1, 2, 0).cpu().numpy()
-        ax[i, 0].imshow(exp_img)
-        for j in range(8):
-            ax[i, j+1].imshow(sim_img[..., j])
-            ax[i, j+1].axis('off')
-            if i == 0 and j == 0:
-                ax[i, j+1].set_title(f'Cell Count', loc='center')
-            elif i == 0:
-                ax[i, j+1].set_title(f'{state_names[j]}', loc='center')
-        if i == 0:
-            ax[i, 0].set_title('Experimental\n(Target)', loc='center')
-        ax[i, 0].axis('off')
-    plt.tight_layout()
-    plt.show()

@@ -85,7 +85,6 @@ class Sim2ExpModel(nn.Module):
     
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         in_chans = x.shape[1]
-        
         # Project to internal representation
         if in_chans == self.sim_chans:
             x_internal = self.proj_sim_to_internal(x)

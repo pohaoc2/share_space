@@ -99,7 +99,7 @@ def visualize_pca(*feature_sets, sample_idx=5, save_dir=None, labels=None, color
     feature_arrays = []
     for features in feature_sets:
         if isinstance(features, torch.Tensor):
-            feature_arrays.append(features.numpy())
+            feature_arrays.append(features.cpu().numpy())
         else:
             feature_arrays.append(features)
 

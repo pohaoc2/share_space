@@ -39,6 +39,7 @@ from share_space.visualizer import (
     visualize_linearly_fused_images,
     visualize_pca,
     visualize_first_batch,
+    visualize_style_transfer,
 )
 from share_space.utils import (
     inverse_transform,
@@ -385,11 +386,11 @@ def main(config_path="config.yaml"):
             device,
             save_dir=config["visualization"]["reconstructed_images"]["save_dir"],
         )
-        # visualize_reconstructed_images(all_exp_imgs, pred_exp_imgs, all_sim_imgs, pred_sim_imgs, save_dir=config['visualization']['reconstructed_images']['save_dir'])
-        # visualize_images_sampled_from_distribution(model, exp_patch_tokens, device, save_dir=config['visualization']['reconstructed_images']['save_dir'])
+        visualize_reconstructed_images(all_exp_imgs, pred_exp_imgs, all_sim_imgs, pred_sim_imgs, save_dir=config['visualization']['reconstructed_images']['save_dir'])
+        visualize_images_sampled_from_distribution(model, exp_patch_tokens, device, save_dir=config['visualization']['reconstructed_images']['save_dir'])
 
         # ========== PCA Visualization ==========
-        if 0:
+        if 1:
             pca_results = visualize_pca(
                 sim_cls_token,
                 exp_cls_token,
@@ -401,7 +402,7 @@ def main(config_path="config.yaml"):
             obs, pval = frechet_permutation_test_animated(
                 content_latents,
                 style_latents,
-                n_perms=10,
+                n_perms=100,
                 seed=42,
                 figsize=(8, 3.75),
                 save_dir=config["visualization"]["reconstructed_images"]["save_dir"],
@@ -411,21 +412,20 @@ def main(config_path="config.yaml"):
             create_static_summary_plot(
                 content_latents,
                 style_latents,
-                n_perms=10,
+                n_perms=100,
                 seed=42,
                 figsize=(8, 3.75),
                 save_dir=config["visualization"]["reconstructed_images"]["save_dir"],
                 n_bins=20,
             )
 
-    if 0:
+    if 1:
         visualize_style_transfer(
             style_model,
             val_loader,
             device,
             save_dir=config["visualization"]["style_transfer"]["save_dir"],
             n_viz=config["visualization"]["style_transfer"]["n_viz"],
-            states=list(state_names.keys()),
         )
     if 0:
         style_model.eval()
