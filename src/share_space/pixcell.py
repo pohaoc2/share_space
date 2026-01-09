@@ -75,7 +75,7 @@ uni_model.to(device);
 
 
 generated_exp_like_images = []
-for batch in val_loader:
+for batch in train_loader:
     for idx, sim_img in enumerate(batch['simulation']):
         sim_img = sim_img.permute(1, 2, 0).cpu().numpy()
         exp_img = batch['shuffled_exp'][idx].permute(1, 2, 0).cpu().numpy()

@@ -224,7 +224,7 @@ class SimExpPairedDataset(Dataset):
             else:
                 print(f"Warning: Missing simulation files for {exp_path.name}")
         
-        return pairs[:50]
+        return pairs[:]
     
     def _rgb_to_state_index(self, rgb_image: np.ndarray) -> np.ndarray:
         """
