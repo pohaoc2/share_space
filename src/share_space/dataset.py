@@ -189,7 +189,10 @@ class SimExpPairedDataset(Dataset):
         ])
         # Find all paired images
         self.pairs = self._find_paired_images()
-        
+        rng = torch.Generator()
+        if hasattr(self, 'seed') and self.seed is not None:
+            rng.manual_seed(self.seed)
+        self.shuffled_indices = torch.randperm(len(self.pairs), generator=rng)
         if len(self.pairs) == 0:
             raise ValueError(f"No paired images found in {exp_dir} and {sim_dir}")
         
@@ -262,10 +265,8 @@ class SimExpPairedDataset(Dataset):
     
     def __getitem__(self, idx: int) -> dict:
         exp_path, sim_state_path, sim_count_path, sim_binary_path = self.pairs[idx]
-        rng = torch.Generator()
-        if hasattr(self, 'seed') and self.seed is not None:
-            rng.manual_seed(self.seed)
-        shuffled_idx = torch.randperm(len(self.pairs), generator=rng)[idx]
+
+        shuffled_idx = self.shuffled_indices[idx]
         shuffled_exp_path, shuffled_sim_state_path, shuffled_sim_count_path, shuffled_sim_binary_path = self.pairs[shuffled_idx]
         shuffled_exp_img = Image.open(shuffled_exp_path).convert('RGB')
         shuffled_exp_tensor = self.exp_transform(shuffled_exp_img)  # (3, H, W), normalized to [-1, 1]
@@ -297,11 +298,11 @@ class SimExpPairedDataset(Dataset):
             sim_state_onehot[state_idx-1] = (sim_state_tensor == state_idx).float()
         
         # Combine: (1, H, W) + (7, H, W) = (8, H, W)
-        sim_tensor = torch.cat([sim_count_tensor, sim_binary_tensor, sim_state_onehot], dim=0)
-        
+        sim_tensor = torch.cat([sim_count_tensor, sim_state_onehot], dim=0)
         return {
             'experimental': exp_tensor,      # (3, H, W), RGB normalized to [-1, 1]
-            'simulation': sim_tensor[3:6],        # (14, H, W) == count + binary + 7 one-hot state channels
+            'simulation': sim_tensor[:3],        # (8, H, W) == count + 7 one-hot state channels
+            'binary_mask': sim_binary_tensor,
             'shuffled_exp': shuffled_exp_tensor,
             'shuffled_exp_path': str(shuffled_exp_path),
             'exp_path': str(exp_path),
