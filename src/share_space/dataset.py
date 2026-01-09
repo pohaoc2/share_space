@@ -303,6 +303,7 @@ class SimExpPairedDataset(Dataset):
             'experimental': exp_tensor,      # (3, H, W), RGB normalized to [-1, 1]
             'simulation': sim_tensor[3:6],        # (14, H, W) == count + binary + 7 one-hot state channels
             'shuffled_exp': shuffled_exp_tensor,
+            'shuffled_exp_path': str(shuffled_exp_path),
             'exp_path': str(exp_path),
             'sim_state_path': str(sim_state_path),
             'sim_count_path': str(sim_count_path),
