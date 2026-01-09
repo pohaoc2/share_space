@@ -5,9 +5,13 @@ from torch.utils.data import DataLoader
 from torchvision.models import Inception_V3_Weights
 import numpy as np
 from scipy import linalg
+import torch.nn.functional as F
 from typing import Tuple
 from tqdm import tqdm
 import copy
+from share_space.utils import (
+    get_all_samples_from_loader
+)
 
 class FIDScore:
     """Frechet Inception Distance for evaluating image quality"""

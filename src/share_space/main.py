@@ -245,7 +245,7 @@ def main(config_path="config.yaml"):
         run_final_eval=True,
     )
     # Compute feature similarity metrics
-    if 0:
+    if 1:
         metrics = compute_feature_similarity_metrics(model, val_loader, device=device, verbose=True)
     if 0:
         if config["training"]["stage_1"]["eval_only"]:

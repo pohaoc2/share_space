@@ -214,16 +214,17 @@ class SimExpPairedDataset(Dataset):
             number, sub_number = match.groups()
             # Construct corresponding simulation file names
             sim_base = f"train_{number}_{int(sub_number)}_0000.000000.population"
+            sim_binary_base = f"binary_nuclei_map_{number}_{int(sub_number)}"
             sim_state_path = self.sim_dir / f"{sim_base}.state.png"
             sim_count_path = self.sim_dir / f"{sim_base}.count.png"
-            
+            sim_binary_path = self.sim_dir / f"{sim_binary_base}.png"
             # Check if both simulation channels exist
             if sim_state_path.exists() and sim_count_path.exists():
-                pairs.append((exp_path, sim_state_path, sim_count_path))
+                pairs.append((exp_path, sim_state_path, sim_count_path, sim_binary_path))
             else:
                 print(f"Warning: Missing simulation files for {exp_path.name}")
         
-        return pairs[:]
+        return pairs[:50]
     
     def _rgb_to_state_index(self, rgb_image: np.ndarray) -> np.ndarray:
         """
@@ -260,12 +261,12 @@ class SimExpPairedDataset(Dataset):
         return len(self.pairs)
     
     def __getitem__(self, idx: int) -> dict:
-        exp_path, sim_state_path, sim_count_path = self.pairs[idx]
+        exp_path, sim_state_path, sim_count_path, sim_binary_path = self.pairs[idx]
         rng = torch.Generator()
         if hasattr(self, 'seed') and self.seed is not None:
             rng.manual_seed(self.seed)
         shuffled_idx = torch.randperm(len(self.pairs), generator=rng)[idx]
-        shuffled_exp_path, shuffled_sim_state_path, shuffled_sim_count_path = self.pairs[shuffled_idx]
+        shuffled_exp_path, shuffled_sim_state_path, shuffled_sim_count_path, shuffled_sim_binary_path = self.pairs[shuffled_idx]
         shuffled_exp_img = Image.open(shuffled_exp_path).convert('RGB')
         shuffled_exp_tensor = self.exp_transform(shuffled_exp_img)  # (3, H, W), normalized to [-1, 1]
         # Load experimental image (RGB)
@@ -274,8 +275,9 @@ class SimExpPairedDataset(Dataset):
         
         # Load simulation count (grayscale, continuous [0, 1])
         sim_count = Image.open(sim_count_path).convert('RGB')
-        sim_count_tensor = self.count_transform(sim_count)  # (1, H, W), normalized to [-1, 1]
-        
+        sim_count_tensor = self.count_transform(sim_count)  # (3, H, W), normalized to [-1, 1]
+        sim_binary = Image.open(sim_binary_path).convert('RGB')
+        sim_binary_tensor = self.exp_transform(sim_binary)  # (3, H, W), normalized to [-1, 1]
         # Load simulation state (RGB, categorical)
         sim_state_rgb = Image.open(sim_state_path).convert('RGB')
         # Use NEAREST interpolation to preserve discrete colors
@@ -295,15 +297,16 @@ class SimExpPairedDataset(Dataset):
             sim_state_onehot[state_idx-1] = (sim_state_tensor == state_idx).float()
         
         # Combine: (1, H, W) + (7, H, W) = (8, H, W)
-        sim_tensor = torch.cat([sim_count_tensor, sim_state_onehot], dim=0)
+        sim_tensor = torch.cat([sim_count_tensor, sim_binary_tensor, sim_state_onehot], dim=0)
         
         return {
             'experimental': exp_tensor,      # (3, H, W), RGB normalized to [-1, 1]
-            'simulation': sim_tensor[:3],        # (8, H, W), count + 7 one-hot state channels
+            'simulation': sim_tensor[3:6],        # (14, H, W) == count + binary + 7 one-hot state channels
             'shuffled_exp': shuffled_exp_tensor,
             'exp_path': str(exp_path),
             'sim_state_path': str(sim_state_path),
-            'sim_count_path': str(sim_count_path)
+            'sim_count_path': str(sim_count_path),
+            'sim_binary_path': str(sim_binary_path)
         }
 
 def get_real_dataloaders(

@@ -39,7 +39,7 @@ training:
     run_final_eval: false
   stage_2:
     eval_only: false
-    epochs: 1
+    epochs: 0
     learning_rate: 0.001
     weight_decay: 0.05
     teacher_momentum: 0.996
