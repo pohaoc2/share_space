@@ -177,10 +177,10 @@ class SimExpPairedDataset(Dataset):
             T.Normalize(mean=[0.5], std=[0.5])  # Normalize to [-1, 1]
         ])
         self.count_transform = T.Compose([
-            T.Resize((img_size, img_size)),
+            T.Resize((img_size, img_size), interpolation=T.InterpolationMode.NEAREST_EXACT),
             T.ToTensor(),  # Converts to [0, 1]
             #InvertNonZero(),
-            T.Normalize(mean=[0.5], std=[0.5])  # Normalize to [-1, 1]
+            #T.Normalize(mean=[0.5], std=[0.5])  # Normalize to [-1, 1]
         ])
         # State channel: convert to one-hot encoding
         self.state_transform = T.Compose([
@@ -222,7 +222,7 @@ class SimExpPairedDataset(Dataset):
             sim_binary_base = f"binary_nuclei_map_{number}_{int(sub_number)}"
             sim_state_path = self.sim_dir / f"{sim_base}.state.png"
             sim_count_path = self.sim_dir / f"{sim_base}.count.black_bg.png"
-            sim_count_path = self.sim_dir / f"train_{number}_{int(sub_number)}.mask.png"
+            #sim_count_path = self.sim_dir / f"train_{number}_{int(sub_number)}.mask.png"
             sim_binary_path = self.sim_dir / f"{sim_binary_base}.png"
             # Check if both simulation channels exist
             if sim_count_path.exists() and sim_state_path.exists() and sim_binary_path.exists():
