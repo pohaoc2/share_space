@@ -225,7 +225,7 @@ class SimExpPairedDataset(Dataset):
             sim_count_path = self.sim_dir / f"train_{number}_{int(sub_number)}.mask.png"
             sim_binary_path = self.sim_dir / f"{sim_binary_base}.png"
             # Check if both simulation channels exist
-            if sim_count_path.exists():# and sim_state_path.exists():
+            if sim_count_path.exists() and sim_state_path.exists() and sim_binary_path.exists():
                 pairs.append((exp_path, sim_state_path, sim_count_path, sim_binary_path))
             else:
                 print(f"Warning: Missing simulation files for {exp_path.name}")
