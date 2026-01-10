@@ -179,7 +179,7 @@ class SimExpPairedDataset(Dataset):
         self.count_transform = T.Compose([
             T.Resize((img_size, img_size)),
             T.ToTensor(),  # Converts to [0, 1]
-            InvertNonZero(),
+            #InvertNonZero(),
             T.Normalize(mean=[0.5], std=[0.5])  # Normalize to [-1, 1]
         ])
         # State channel: convert to one-hot encoding
@@ -217,12 +217,15 @@ class SimExpPairedDataset(Dataset):
             number, sub_number = match.groups()
             # Construct corresponding simulation file names
             sim_base = f"train_{number}_{int(sub_number)}_0000.000000.population"
+
+            
             sim_binary_base = f"binary_nuclei_map_{number}_{int(sub_number)}"
             sim_state_path = self.sim_dir / f"{sim_base}.state.png"
-            sim_count_path = self.sim_dir / f"{sim_base}.count.png"
+            sim_count_path = self.sim_dir / f"{sim_base}.count.black_bg.png"
+            sim_count_path = self.sim_dir / f"train_{number}_{int(sub_number)}.mask.png"
             sim_binary_path = self.sim_dir / f"{sim_binary_base}.png"
             # Check if both simulation channels exist
-            if sim_state_path.exists() and sim_count_path.exists():
+            if sim_count_path.exists():# and sim_state_path.exists():
                 pairs.append((exp_path, sim_state_path, sim_count_path, sim_binary_path))
             else:
                 print(f"Warning: Missing simulation files for {exp_path.name}")
