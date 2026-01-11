@@ -9,6 +9,9 @@ import torch.nn.functional as F
 from typing import Tuple
 from tqdm import tqdm
 import copy
+import glob
+import os
+from PIL import Image
 from share_space.utils import (
     get_all_samples_from_loader
 )
@@ -31,12 +34,20 @@ class FIDScore:
     @torch.no_grad()
     def extract_features(self, images: torch.Tensor) -> np.ndarray:
         """Extract InceptionV3 features"""
+        # Convert uint8 [0, 255] to float32 [0, 1] if needed
+        if images.dtype == torch.uint8:
+            images = images.float() / 255.0
+        
         images = images.to(self.device)
         
         # Resize to 299x299 (InceptionV3 input size)
         if images.shape[-1] != 299:
             images = torch.nn.functional.interpolate(images, size=(299, 299), 
                                                     mode='bilinear', align_corners=False)
+        
+        # Normalize for InceptionV3 (ImageNet stats)
+        # InceptionV3 expects inputs normalized to [-1, 1] or [0, 1] depending on implementation
+        # Standard torchvision InceptionV3 expects [0, 1] range
         
         # Get features
         features = self.inception(images)
@@ -280,3 +291,30 @@ def compute_feature_similarity_metrics(model, val_loader, device, verbose=True):
             print(f"  style[i] vs style[j] (within-group): {results['kl_divergence']['style_within']:.6f}")
             print("=" * 60)
     return results
+
+def main():
+    generated_exp_folder = "../../results/all_outputs_val_gt/generated_images"
+    real_exp_folder = "../../data/exp"
+
+    generated_images_paths = glob.glob(os.path.join(generated_exp_folder, "*.png"))
+    generated_images = np.stack([np.array(Image.open(path)) for path in generated_images_paths[:50]])
+    generated_images = generated_images.transpose(0, 3, 1, 2)  # NHWC -> NCHW
+
+    real_images_paths = glob.glob(os.path.join(real_exp_folder, "*.png"))
+    real_images = np.stack([np.array(Image.open(path)) for path in real_images_paths[:50]])
+    real_images = real_images.transpose(0, 3, 1, 2)  # NHWC -> NCHW
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    FID_score = FIDScore(device=device)
+
+    # Ensure uint8 dtype
+    generated_images_tensor = torch.from_numpy(generated_images.astype(np.uint8))
+    real_images_tensor = torch.from_numpy(real_images.astype(np.uint8))
+
+    generated_features = FID_score.extract_features(generated_images_tensor)
+    real_features = FID_score.extract_features(real_images_tensor)
+    fid_score = FID_score.calculate_fid(generated_features, real_features)
+    print(f"FID score: {fid_score}")
+
+if __name__ == "__main__":
+    main()
