@@ -151,18 +151,19 @@ def visualize_pca(*feature_sets, sample_idx=5, save_dir=None, labels=None, color
             )
 
     # Plot first sample of each set (filled markers with black edge)
-    for i, (label, color, marker) in enumerate(zip(labels, colors, markers)):
-        latents = latents_pca_np[label]
-        if len(latents) > 0:
-            ax.scatter(
-                latents[sample_idx : sample_idx + 1, 0],
-                latents[sample_idx : sample_idx + 1, 1],
-                facecolors=color,
-                edgecolors="black",
-                marker=marker,
-                s=70,
-                zorder=5,
-            )
+    if 0:
+        for i, (label, color, marker) in enumerate(zip(labels, colors, markers)):
+            latents = latents_pca_np[label]
+            if len(latents) > 0:
+                ax.scatter(
+                    latents[sample_idx : sample_idx + 1, 0],
+                    latents[sample_idx : sample_idx + 1, 1],
+                    facecolors=color,
+                    edgecolors="black",
+                    marker=marker,
+                    s=70,
+                    zorder=5,
+                )
 
     # Draw lines connecting the first samples (only if we have exactly 2 feature sets)
     if len(feature_sets) == 2:
@@ -355,6 +356,7 @@ def visualize_reconstructed_images(
         plt.tight_layout()
         plt.subplots_adjust(hspace=0.01, wspace=0.05)
         if save_dir is not None:
+            os.makedirs(save_dir, exist_ok=True)
             plt.savefig(
                 Path(save_dir) / f"reconstructed_images_{state_names[state]}.png",
                 dpi=300,

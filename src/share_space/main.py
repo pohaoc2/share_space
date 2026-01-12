@@ -1,6 +1,8 @@
 import yaml
 import os
 import copy
+import glob
+from PIL import Image
 from pathlib import Path
 import json
 import matplotlib.pyplot as plt
@@ -218,7 +220,20 @@ def main(config_path="config.yaml"):
         train_split=config["data"]["train_split"],
         seed=config["data"]["seed"],
     )
-
+    if 0:
+        fig, ax = plt.subplots(1, 4, figsize=(24, 6))
+        for b_id, batch in enumerate(val_loader):
+            for idx, sim_img in enumerate(batch['simulation']):
+                if idx != 1: continue
+                sim_name = batch['sim_binary_path'][idx].split('/')[-1]
+                sim_img = sim_img.permute(1, 2, 0).cpu().numpy()
+                exp_img = batch['shuffled_exp'][idx].permute(1, 2, 0).cpu().numpy()
+                ax[0].imshow(exp_img)
+                ax[1].imshow(batch['experimental'][idx].permute(1, 2, 0).cpu().numpy())
+                ax[2].imshow(sim_img[...,0], vmin=0, vmax=1, cmap='gray')
+                ax[3].imshow(batch['binary_mask'][idx].permute(1, 2, 0).cpu().numpy())
+                plt.show()
+                #asd()
     if 0:
         visualize_first_batch(train_loader)
     # Train stage 1
@@ -245,7 +260,7 @@ def main(config_path="config.yaml"):
         run_final_eval=True,
     )
     # Compute feature similarity metrics
-    if 1:
+    if 0:
         metrics = compute_feature_similarity_metrics(model, val_loader, device=device, verbose=True)
     if 0:
         if config["training"]["stage_1"]["eval_only"]:
@@ -370,27 +385,71 @@ def main(config_path="config.yaml"):
     )
     if 1:
         model.eval()
-        all_sim_imgs, all_exp_imgs = get_all_samples_from_loader(val_loader)
-        pred_sim_imgs, sim_cls_token, sim_patch_tokens = model(all_sim_imgs.to(device))
-        pred_exp_imgs, exp_cls_token, exp_patch_tokens = model(all_exp_imgs.to(device))
-        pred_exp_imgs = inverse_transform_batch(pred_exp_imgs)
-        pred_sim_imgs = inverse_transform_batch(pred_sim_imgs)
-        all_sim_imgs = inverse_transform_batch(all_sim_imgs)
-        all_exp_imgs = inverse_transform_batch(all_exp_imgs)
         n_viz = 4
         sample_idx = 5
-        visualize_linearly_fused_images(
-            model,
-            sim_patch_tokens[sample_idx : sample_idx + 1],
-            exp_patch_tokens[sample_idx : sample_idx + 1],
-            device,
-            save_dir=config["visualization"]["reconstructed_images"]["save_dir"],
-        )
+        all_sim_imgs, all_exp_imgs = get_all_samples_from_loader(val_loader)
+        gen_paths = "../../all_outputs_val_sim/generated_images"
+        # Load images, resize to config["model"]["img_size"], and convert to numpy
+        img_size = config["model"]["img_size"]
+        all_gen_imgs = [
+            np.array(Image.open(path).resize((img_size, img_size), resample=Image.BILINEAR))
+            for path in glob.glob(os.path.join(gen_paths, "*.png"))
+        ]
+        all_gen_imgs = np.stack(all_gen_imgs)  # Stack to (N, H, W, C) - NHWC
+        all_gen_imgs = all_gen_imgs.transpose(0, 3, 1, 2)  # NHWC -> NCHW
+        # Convert to float32 and normalize from [0, 255] to [0, 1], then to [-1, 1]
+        all_gen_imgs = all_gen_imgs.astype(np.float32) / 255.0  # [0, 255] -> [0, 1]
+        all_gen_imgs = (all_gen_imgs - 0.5) / 0.5  # [0, 1] -> [-1, 1] (same as dataset normalization)
+        all_gen_imgs = torch.from_numpy(all_gen_imgs).float()
+        pred_sim_imgs, sim_cls_token, sim_patch_tokens = model(all_sim_imgs.to(device))
+        pred_exp_imgs, exp_cls_token, exp_patch_tokens = model(all_exp_imgs.to(device))
+        pred_gen_imgs, gen_cls_token, gen_patch_tokens = model(all_gen_imgs.to(device))
+        pred_exp_imgs = inverse_transform_batch(pred_exp_imgs)
+        #pred_sim_imgs = inverse_transform_batch(pred_sim_imgs)
+        #all_sim_imgs = inverse_transform_batch(all_sim_imgs)
+        all_exp_imgs = inverse_transform_batch(all_exp_imgs)
+
         visualize_reconstructed_images(all_exp_imgs, pred_exp_imgs, all_sim_imgs, pred_sim_imgs, save_dir=config['visualization']['reconstructed_images']['save_dir'])
-        visualize_images_sampled_from_distribution(model, exp_patch_tokens, device, save_dir=config['visualization']['reconstructed_images']['save_dir'])
+        pca_results = visualize_pca(
+            sim_cls_token.detach().cpu().numpy(),
+            exp_cls_token.detach().cpu().numpy(),
+            gen_cls_token.detach().cpu().numpy(),
+            labels=["Simulation", "Experiment", "Generated"],
+            save_dir=config["training"]["stage_2"]["save_dir"],
+        )        
+        fused_latents = np.array(pca_results["reconstructed_latents_pca"])
+        experimental_latents = np.array(pca_results["style_latents_pca"])
+        obs, pval = frechet_permutation_test_animated(
+            fused_latents,
+            experimental_latents,
+            n_perms=300,
+            seed=42,
+            figsize=(8, 3.75),
+            save_dir=config["training"]["stage_2"]["save_dir"],
+            fps=15,
+            n_bins=20,
+        )
+        create_static_summary_plot(
+            fused_latents,
+            experimental_latents,
+            n_perms=300,
+            seed=42,
+            figsize=(8, 3.75),
+            save_dir=config["training"]["stage_2"]["save_dir"],
+            n_bins=20,
+        )
+        if 0:
+            visualize_linearly_fused_images(
+                model,
+                sim_patch_tokens[sample_idx : sample_idx + 1],
+                exp_patch_tokens[sample_idx : sample_idx + 1],
+                device,
+                save_dir=config["visualization"]["reconstructed_images"]["save_dir"],
+            )
+            visualize_images_sampled_from_distribution(model, exp_patch_tokens, device, save_dir=config['visualization']['reconstructed_images']['save_dir'])
 
         # ========== PCA Visualization ==========
-        if 1:
+        if 0:
             pca_results = visualize_pca(
                 sim_cls_token,
                 exp_cls_token,
@@ -419,7 +478,7 @@ def main(config_path="config.yaml"):
                 n_bins=20,
             )
 
-    if 1:
+    if 0:
         visualize_style_transfer(
             style_model,
             val_loader,

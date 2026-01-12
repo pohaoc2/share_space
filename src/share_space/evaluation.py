@@ -294,16 +294,51 @@ def compute_feature_similarity_metrics(model, val_loader, device, verbose=True):
 
 def main():
     generated_exp_folder = "../../results/all_outputs_val_gt/generated_images"
-    real_exp_folder = "../../data/exp"
+    
+    real_exp_folder = "/Users/pohaochiu/Documents/UW/bagherilab/hover_net/dataset/CoNSeP/Train/Images"#"../../data/exp"
+    generated_exp_folder = real_exp_folder
+    #real_exp_folder = "../../results/all_outputs_val_gt/exp_images"
 
+    def sort_by_numbers(path):
+        """Extract numbers from filename and return as tuple for sorting"""
+        filename = os.path.basename(path)
+        # Remove .png extension and split by underscore
+        name_parts = filename.replace('.png', '').split('_')
+        # Convert numeric parts to integers, filter out non-numeric parts
+        numbers = [int(part) for part in name_parts if part.isdigit()]
+        return tuple(numbers) if numbers else (0,)
+    
     generated_images_paths = glob.glob(os.path.join(generated_exp_folder, "*.png"))
-    generated_images = np.stack([np.array(Image.open(path)) for path in generated_images_paths[:50]])
+    generated_images_paths = sorted(generated_images_paths, key=sort_by_numbers)
+    # Load and resize generated images to [256, 256, 3]
+    generated_images_list = []
+    for path in generated_images_paths[:26:2]:
+        img = Image.open(path).convert('RGB').resize((256, 256), resample=Image.BILINEAR)
+        img_arr = np.array(img)
+        # Ensure the image has shape (256, 256, 3)
+        if img_arr.ndim == 2:
+            # Grayscale image, duplicate channels
+            img_arr = np.stack([img_arr]*3, axis=-1)
+        elif img_arr.shape[2] == 4:
+            # RGBA image, drop alpha channel
+            img_arr = img_arr[..., :3]
+        generated_images_list.append(img_arr)
+    generated_images = np.stack(generated_images_list)
     generated_images = generated_images.transpose(0, 3, 1, 2)  # NHWC -> NCHW
 
     real_images_paths = glob.glob(os.path.join(real_exp_folder, "*.png"))
-    real_images = np.stack([np.array(Image.open(path)) for path in real_images_paths[:50]])
+    real_images_paths = sorted(real_images_paths, key=sort_by_numbers)
+    real_images_list = []
+    for path in real_images_paths[1:27:2]:
+        img = Image.open(path).convert('RGB').resize((256, 256), resample=Image.BILINEAR)
+        img_arr = np.array(img)
+        if img_arr.ndim == 2:
+            img_arr = np.stack([img_arr]*3, axis=-1)
+        elif img_arr.shape[2] == 4:
+            img_arr = img_arr[..., :3]
+        real_images_list.append(img_arr)
+    real_images = np.stack(real_images_list)
     real_images = real_images.transpose(0, 3, 1, 2)  # NHWC -> NCHW
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
     FID_score = FIDScore(device=device)
 
@@ -315,6 +350,26 @@ def main():
     real_features = FID_score.extract_features(real_images_tensor)
     fid_score = FID_score.calculate_fid(generated_features, real_features)
     print(f"FID score: {fid_score}")
+    # Visualize some samples to sanity check
+    import matplotlib.pyplot as plt
 
+    fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+    for i in range(5):
+        axes[0, i].imshow(generated_images[i].transpose(1, 2, 0))
+        axes[0, i].set_title(f"Generated {i}")
+        axes[0, i].axis('off')
+        
+        axes[1, i].imshow(real_images[i].transpose(1, 2, 0))
+        axes[1, i].set_title(f"Real {i}")
+        axes[1, i].axis('off')
+    plt.tight_layout()
+    plt.savefig("fid_comparison.png")
+    plt.show()
+
+    # Check statistics
+    print(f"Generated - min: {generated_images.min()}, max: {generated_images.max()}, mean: {generated_images.mean():.2f}")
+    print(f"Real - min: {real_images.min()}, max: {real_images.max()}, mean: {real_images.mean():.2f}")
+    print(f"Generated shape: {generated_images.shape}")
+    print(f"Real shape: {real_images.shape}")
 if __name__ == "__main__":
     main()

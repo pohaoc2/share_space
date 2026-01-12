@@ -337,7 +337,7 @@ def create_static_summary_plot(
     
     # Create figure
     fig = plt.figure(figsize=figsize)
-    x_ranges = [(-0.1, 1)]
+    x_ranges = [(-0.1, 3)]
     
     # Create broken axis for histogram (left side, takes ~45% of width) # left, bottom, width, height
     hist_axes = setup_broken_axis_histogram(fig, pos=(0.1, 0.15, 0.38, 0.75), x_ranges=x_ranges)
@@ -395,22 +395,22 @@ def create_static_summary_plot(
     return obs_distance, pval
 
 
-# Example usage
-if __name__ == "__main__":
+def dummy_example():
     # Generate example data
     np.random.seed(42)
     
     # Two different distributions
-    X = np.random.randn(100, 10) * 1.0 + 0.0
-    Y = np.random.randn(100, 10) * 1.0 + 0.0  # Shifted mean
+    X = np.random.randn(1000, 10) * 1.0 + 0.0
+    Y = np.random.randn(1000, 10) * 1.0 + 0.0  # Shifted mean
     print("Running Fréchet permutation test with animation...")
     
     # Create animated visualization
+    
     obs, pval = frechet_permutation_test_animated(
         X, Y, 
-        n_perms=10, 
+        n_perms=30, 
         seed=0,
-        output_path='frechet_permutation_test.gif',
+        save_dir='./',
         fps=15,
         n_bins=25
     )
@@ -418,8 +418,29 @@ if __name__ == "__main__":
     # Create static summary
     create_static_summary_plot(
         X, Y,
-        n_perms=10,
+        n_perms=30,
         seed=0,
-        output_path='frechet_permutation_summary.png',
+        save_dir='./',
         n_bins=25
     )
+
+def real_example():
+    pass
+    obs, pval = frechet_permutation_test_animated(
+        X, Y,
+        n_perms=30,
+        seed=0,
+        save_dir='./',
+        fps=15,
+        n_bins=25
+    )
+    create_static_summary_plot(
+        X, Y,
+        n_perms=30,
+        seed=0,
+        save_dir='./',
+        n_bins=25
+    )
+
+if __name__ == "__main__":
+    dummy_example()
