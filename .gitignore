@@ -4,13 +4,17 @@
 *.jpeg
 *.gif
 *.tiff
+*.tif
 *.pth
 *.json
 *.zip
 *.npy
+*.svs
+data/
 
 # Editors
 .vscode/
+
 .idea/
 
 # Spyder project settings
