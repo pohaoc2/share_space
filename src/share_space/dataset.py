@@ -280,7 +280,7 @@ class SimExpPairedDataset(Dataset):
         # Load simulation count (grayscale, continuous [0, 1])
         sim_count = Image.open(sim_count_path).convert('RGB')
         sim_count_tensor = self.count_transform(sim_count)  # (3, H, W), normalized to [-1, 1]
-        sim_binary = Image.open(sim_binary_path).convert('RGB')
+        sim_binary = Image.open(shuffled_sim_binary_path).convert('RGB')
         sim_binary_tensor = self.count_transform(sim_binary)  # (3, H, W), normalized to [-1, 1]
         # Load simulation state (RGB, categorical)
         sim_state_rgb = Image.open(sim_state_path).convert('RGB')

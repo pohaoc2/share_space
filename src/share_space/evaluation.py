@@ -12,75 +12,196 @@ import copy
 import glob
 import os
 from PIL import Image
+import matplotlib.pyplot as plt
 from share_space.utils import (
     get_all_samples_from_loader
 )
 
 class FIDScore:
-    """Frechet Inception Distance for evaluating image quality"""
-    def __init__(self, device: str = 'cuda'):
-        from torchvision import models
+    """Frechet Distance for evaluating image quality with multiple encoders"""
+    def __init__(self, encoder: str = 'inception', device: str = 'cuda'):
+        """
+        Initialize feature extractor
         
-        # Use InceptionV3 for FID calculation
-        inception = models.inception_v3(weights=Inception_V3_Weights.DEFAULT, transform_input=False).to(device)
-        inception.eval()
-        
-        for param in inception.parameters():
-            param.requires_grad = False
-        
-        self.inception = inception
+        Args:
+            encoder: One of ['inception', 'hoptimus', 'virchow', 'uni']
+            device: 'cuda' or 'cpu'
+        """
         self.device = device
+        self.encoder_name = encoder
+        
+        if encoder == 'inception':
+            self.model, self.input_size, self.feature_dim = self._load_inception()
+        elif encoder == 'hoptimus':
+            self.model, self.input_size, self.feature_dim = self._load_hoptimus()
+        elif encoder == 'virchow':
+            self.model, self.input_size, self.feature_dim = self._load_virchow()
+        elif encoder == 'uni':
+            self.model, self.input_size, self.feature_dim = self._load_uni()
+        else:
+            raise ValueError(f"Unknown encoder: {encoder}. Choose from ['inception', 'hoptimus', 'virchow', 'uni']")
+        
+        self.model.eval()
+        self.model.to(device)
+        
+        for param in self.model.parameters():
+            param.requires_grad = False
+            
+        print(f"Loaded {encoder} encoder: input_size={self.input_size}, feature_dim={self.feature_dim}")
+    
+    def _load_inception(self):
+        """Load InceptionV3"""
+        from torchvision import models
+        from torchvision.models import Inception_V3_Weights
+        
+        inception = models.inception_v3(weights=Inception_V3_Weights.DEFAULT, transform_input=False)
+        inception.fc = torch.nn.Identity()
+        
+        return inception, 299, 2048
+    
+    def _load_hoptimus(self):
+        """Load Hoptimus-1"""
+        import timm
+        
+        try:
+            model = timm.create_model(
+                "hf-hub:bioptimus/H-optimus-0",  # Actual model name
+                pretrained=True,
+                dynamic_img_size=True
+            )
+            # Remove classification head
+            if hasattr(model, 'head'):
+                model.head = torch.nn.Identity()
+            
+            return model, 224, 768  # Adjust feature_dim based on actual model
+        except Exception as e:
+            raise ValueError(f"Failed to load Hoptimus-1: {e}. Make sure it's available via timm/HuggingFace")
+    
+    def _load_virchow(self):
+        """Load Virchow-2"""
+        import timm
+        from timm.layers import SwiGLUPacked
+        
+        try:
+            # Virchow2 requires specific MLP layer and activation function
+            model = timm.create_model(
+                "hf-hub:paige-ai/Virchow2",
+                pretrained=True,
+                mlp_layer=SwiGLUPacked,
+                act_layer=torch.nn.SiLU
+            )
+            
+            # Virchow2 outputs (batch, 261, 1280)
+            # We need to extract features properly, so wrap it
+            class Virchow2FeatureExtractor(torch.nn.Module):
+                def __init__(self, base_model):
+                    super().__init__()
+                    self.model = base_model
+                
+                def forward(self, x):
+                    output = self.model(x)  # (batch, 261, 1280)
+                    
+                    class_token = output[:, 0]          # (batch, 1280)
+                    patch_tokens = output[:, 5:]        # (batch, 256, 1280), skip register tokens 1-4
+                    
+                    # Concatenate class token and average pool of patch tokens
+                    embedding = torch.cat([class_token, patch_tokens.mean(1)], dim=-1)  # (batch, 2560)
+                    
+                    return embedding
+            
+            wrapped_model = Virchow2FeatureExtractor(model)
+            
+            # Virchow2 uses 224x224 input, outputs 2560-dim features
+            return wrapped_model, 224, 2560
+            
+        except Exception as e:
+            raise ValueError(f"Failed to load Virchow-2: {e}. Make sure timm and huggingface-hub are installed")
+    
+    def _load_uni(self):
+        """Load UNI"""
+        import timm
+        
+        model = timm.create_model(
+            "hf-hub:MahmoodLab/uni",
+            pretrained=True,
+            init_values=1e-5,
+            dynamic_img_size=True
+        )
+        # Remove classification head
+        if hasattr(model, 'head'):
+            model.head = torch.nn.Identity()
+        
+        return model, 224, 1024
     
     @torch.no_grad()
-    def extract_features(self, images: torch.Tensor) -> np.ndarray:
-        """Extract InceptionV3 features"""
+    def extract_features(self, images: torch.Tensor, batch_size: int = 32) -> np.ndarray:
+        """Extract features using the selected encoder"""
         # Convert uint8 [0, 255] to float32 [0, 1] if needed
         if images.dtype == torch.uint8:
             images = images.float() / 255.0
         
-        images = images.to(self.device)
+        all_features = []
         
-        # Resize to 299x299 (InceptionV3 input size)
-        if images.shape[-1] != 299:
-            images = torch.nn.functional.interpolate(images, size=(299, 299), 
-                                                    mode='bilinear', align_corners=False)
+        # Process in batches to avoid memory issues
+        total_batches = (len(images) + batch_size - 1) // batch_size
+        for i in tqdm(range(0, len(images), batch_size), total=total_batches, desc=f"Extracting {self.encoder_name} features"):
+            print(f"Extracting {self.encoder_name} features from batch {i//batch_size} of {total_batches}")
+            batch = images[i:i+batch_size].to(self.device)
+            
+            # Resize to model's expected input size
+            if batch.shape[-1] != self.input_size or batch.shape[-2] != self.input_size:
+                batch = torch.nn.functional.interpolate(
+                    batch, size=(self.input_size, self.input_size), 
+                    mode='bilinear', align_corners=False
+                )
+            
+            # Normalize with ImageNet mean and std (standard for most models)
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(self.device)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(self.device)
+            batch = (batch - mean) / std
+            
+            # Extract features
+            features = self.model(batch)
+            all_features.append(features.cpu())
+            
+            # Clear GPU memory
+            del batch, features
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
         
-        # Normalize for InceptionV3 (ImageNet stats)
-        # InceptionV3 expects inputs normalized to [-1, 1] or [0, 1] depending on implementation
-        # Standard torchvision InceptionV3 expects [0, 1] range
+        # Concatenate all batches
+        all_features = torch.cat(all_features, dim=0).numpy()
         
-        # Get features
-        features = self.inception(images)
-        return features.cpu().numpy()
+        return all_features
     
     def calculate_fid(self, real_features: np.ndarray, fake_features: np.ndarray) -> float:
         """
-        Calculate FID score between real and fake features
+        Calculate Frechet Distance between real and fake features
         
         Args:
             real_features: features from real images (N, D)
             fake_features: features from generated images (N, D)
         
         Returns:
-            FID score (lower is better)
+            Frechet Distance score (lower is better)
         """
         # Calculate mean and covariance
         mu1, sigma1 = real_features.mean(axis=0), np.cov(real_features, rowvar=False)
         mu2, sigma2 = fake_features.mean(axis=0), np.cov(fake_features, rowvar=False)
         
-        # Calculate FID
+        # Calculate Frechet Distance
         diff = mu1 - mu2
         
         # Product of covariances
-        covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
+        covmean = linalg.sqrtm(sigma1.dot(sigma2))
         
         # Handle numerical errors
         if np.iscomplexobj(covmean):
             covmean = covmean.real
         
-        fid = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2 * covmean)
+        fd = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2 * covmean)
         
-        return float(fid)
+        return float(fd)
     
     def compute_fid_from_loader(self, model: nn.Module, dataloader: DataLoader) -> float:
         """
@@ -99,10 +220,9 @@ class FIDScore:
         fake_features_list = []
         
         for batch in tqdm(dataloader, desc="Computing FID"):
-            #sim_imgs = batch['simulation'].to(self.device)
             sim_imgs = batch[0].to(self.device)
             exp_imgs = batch[1].to(self.device)
-            exp_imgs = copy.deepcopy(sim_imgs)
+            
             # Generate fake experimental images
             with torch.no_grad():
                 fake_imgs, _, _ = model(sim_imgs)
@@ -122,6 +242,7 @@ class FIDScore:
         fid = self.calculate_fid(real_features, fake_features)
         
         return fid
+
 
 
 class MetricsEvaluator:
@@ -292,84 +413,107 @@ def compute_feature_similarity_metrics(model, val_loader, device, verbose=True):
             print("=" * 60)
     return results
 
+def extract_features_from_paths(image_paths, fid_calculator, batch_size=50):
+    """
+    Extract features from image paths in batches to avoid memory issues
+    
+    Args:
+        image_paths: list of image file paths
+        fid_calculator: FIDScore instance
+        batch_size: number of images to process at once
+    
+    Returns:
+        features: np.ndarray of shape (N, 2048)
+    """
+    all_features = []
+    
+    for i in range(0, len(image_paths), batch_size):
+        batch_paths = image_paths[i:i+batch_size]
+        
+        # Load batch
+        batch_images = []
+        for path in batch_paths:
+            img = Image.open(path).convert('RGB')
+            img_arr = np.array(img)
+            if img_arr.ndim == 2:
+                img_arr = np.stack([img_arr]*3, axis=-1)
+            elif img_arr.shape[2] == 4:
+                img_arr = img_arr[..., :3]
+            batch_images.append(img_arr)
+        
+        batch_images = np.stack(batch_images)
+        batch_images = batch_images.transpose(0, 3, 1, 2)  # NHWC -> NCHW
+        
+        # Extract features for this batch
+        batch_tensor = torch.from_numpy(batch_images.astype(np.uint8))
+        batch_features = fid_calculator.extract_features(batch_tensor)
+        
+        all_features.append(batch_features)
+        
+        # Free memory
+        del batch_images, batch_tensor, batch_features
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        
+        print(f"Processed {min(i+batch_size, len(image_paths))}/{len(image_paths)} images")
+    
+    # Concatenate all features
+    all_features = np.concatenate(all_features, axis=0)
+    return all_features
+
 def main():
-    generated_exp_folder = "../../results/all_outputs_val_gt/generated_images"
-    
-    real_exp_folder = "/Users/pohaochiu/Documents/UW/bagherilab/hover_net/dataset/CoNSeP/Train/Images"#"../../data/exp"
-    generated_exp_folder = real_exp_folder
-    #real_exp_folder = "../../results/all_outputs_val_gt/exp_images"
+    folder_path = "../../results/all_outputs_gt/"
+    #folder_path = "../../data/tiles/HE/test/"
+    generated_exp_folder = f"{folder_path}/generated_images"
+    #real_exp_folder = f"{folder_path}/exp_images"
+    real_exp_folder = generated_exp_folder
+    # Get image paths
+    generated_images_paths = np.array(glob.glob(os.path.join(generated_exp_folder, "*.png")))
+    real_images_paths = np.array(glob.glob(os.path.join(real_exp_folder, "*.png")))
+    random_idx = np.random.permutation(len(generated_images_paths))
+    generated_images_paths = generated_images_paths[random_idx]
+    real_images_paths = real_images_paths[random_idx]
 
-    def sort_by_numbers(path):
-        """Extract numbers from filename and return as tuple for sorting"""
-        filename = os.path.basename(path)
-        # Remove .png extension and split by underscore
-        name_parts = filename.replace('.png', '').split('_')
-        # Convert numeric parts to integers, filter out non-numeric parts
-        numbers = [int(part) for part in name_parts if part.isdigit()]
-        return tuple(numbers) if numbers else (0,)
     
-    generated_images_paths = glob.glob(os.path.join(generated_exp_folder, "*.png"))
-    generated_images_paths = sorted(generated_images_paths, key=sort_by_numbers)
-    # Load and resize generated images to [256, 256, 3]
-    generated_images_list = []
-    for path in generated_images_paths[:26:2]:
-        img = Image.open(path).convert('RGB').resize((256, 256), resample=Image.BILINEAR)
-        img_arr = np.array(img)
-        # Ensure the image has shape (256, 256, 3)
-        if img_arr.ndim == 2:
-            # Grayscale image, duplicate channels
-            img_arr = np.stack([img_arr]*3, axis=-1)
-        elif img_arr.shape[2] == 4:
-            # RGBA image, drop alpha channel
-            img_arr = img_arr[..., :3]
-        generated_images_list.append(img_arr)
-    generated_images = np.stack(generated_images_list)
-    generated_images = generated_images.transpose(0, 3, 1, 2)  # NHWC -> NCHW
-
-    real_images_paths = glob.glob(os.path.join(real_exp_folder, "*.png"))
-    real_images_paths = sorted(real_images_paths, key=sort_by_numbers)
-    real_images_list = []
-    for path in real_images_paths[1:27:2]:
-        img = Image.open(path).convert('RGB').resize((256, 256), resample=Image.BILINEAR)
-        img_arr = np.array(img)
-        if img_arr.ndim == 2:
-            img_arr = np.stack([img_arr]*3, axis=-1)
-        elif img_arr.shape[2] == 4:
-            img_arr = img_arr[..., :3]
-        real_images_list.append(img_arr)
-    real_images = np.stack(real_images_list)
-    real_images = real_images.transpose(0, 3, 1, 2)  # NHWC -> NCHW
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    FID_score = FIDScore(device=device)
-
-    # Ensure uint8 dtype
-    generated_images_tensor = torch.from_numpy(generated_images.astype(np.uint8))
-    real_images_tensor = torch.from_numpy(real_images.astype(np.uint8))
-
-    generated_features = FID_score.extract_features(generated_images_tensor)
-    real_features = FID_score.extract_features(real_images_tensor)
+    encoder = 'virchow'
+    FID_score = FIDScore(device=device, encoder=encoder)
+    #generated_images_paths = generated_images_paths[:20]
+    #real_images_paths = real_images_paths[:20]
+    # Extract features in batches
+    mid = 200
+    print("\nExtracting features from generated images...")
+    generated_features = extract_features_from_paths(
+        generated_images_paths[:mid], 
+        FID_score, 
+        batch_size=100
+    )
+    
+    print("\nExtracting features from real images...")
+    real_features = extract_features_from_paths(
+        real_images_paths[mid:2*mid], 
+        FID_score, 
+        batch_size=100
+    )
+    
+    # Calculate FID
+    print(f"\nCalculating FID with {encoder} encoder...")
     fid_score = FID_score.calculate_fid(generated_features, real_features)
-    print(f"FID score: {fid_score}")
-    # Visualize some samples to sanity check
-    import matplotlib.pyplot as plt
+    print(f"FID score (generated vs real): {fid_score:.2f}")
 
     fig, axes = plt.subplots(2, 5, figsize=(15, 6))
     for i in range(5):
-        axes[0, i].imshow(generated_images[i].transpose(1, 2, 0))
+        axes[0, i].imshow(Image.open(generated_images_paths[i]).convert('RGB'))
         axes[0, i].set_title(f"Generated {i}")
         axes[0, i].axis('off')
         
-        axes[1, i].imshow(real_images[i].transpose(1, 2, 0))
+        axes[1, i].imshow(Image.open(real_images_paths[len(real_images_paths)-i-1]).convert('RGB'))
         axes[1, i].set_title(f"Real {i}")
         axes[1, i].axis('off')
     plt.tight_layout()
     plt.savefig("fid_comparison.png")
     plt.show()
 
-    # Check statistics
-    print(f"Generated - min: {generated_images.min()}, max: {generated_images.max()}, mean: {generated_images.mean():.2f}")
-    print(f"Real - min: {real_images.min()}, max: {real_images.max()}, mean: {real_images.mean():.2f}")
-    print(f"Generated shape: {generated_images.shape}")
-    print(f"Real shape: {real_images.shape}")
+
+
 if __name__ == "__main__":
     main()
