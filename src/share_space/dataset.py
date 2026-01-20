@@ -222,7 +222,7 @@ class SimExpPairedDataset(Dataset):
             sim_binary_base = f"binary_nuclei_map_{number}_{int(sub_number)}"
             sim_state_path = self.sim_dir / f"{sim_base}.state.png"
             sim_count_path = self.sim_dir / f"{sim_base}.count.black_bg.png"
-            #sim_count_path = self.sim_dir / f"train_{number}_{int(sub_number)}.mask.png"
+            sim_count_path = self.sim_dir / f"train_{number}_{int(sub_number)}.mask.png"
             sim_binary_path = self.sim_dir / f"{sim_binary_base}.png"
             # Check if both simulation channels exist
             if sim_count_path.exists() and sim_state_path.exists() and sim_binary_path.exists():
@@ -230,7 +230,7 @@ class SimExpPairedDataset(Dataset):
             else:
                 print(f"Warning: Missing simulation files for {exp_path.name}")
         
-        return pairs[:]
+        return pairs[:256]
     
     def _rgb_to_state_index(self, rgb_image: np.ndarray) -> np.ndarray:
         """

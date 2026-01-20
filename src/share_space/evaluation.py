@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 from share_space.utils import (
     get_all_samples_from_loader
 )
+from scipy.optimize import linear_sum_assignment
+from scipy.io import loadmat
 
 class FIDScore:
     """Frechet Distance for evaluating image quality with multiple encoders"""
@@ -460,7 +462,150 @@ def extract_features_from_paths(image_paths, fid_calculator, batch_size=50):
     all_features = np.concatenate(all_features, axis=0)
     return all_features
 
-def main():
+
+def dice2(gt_masks, pred_masks):
+    """
+    Ensemble Dice (DICE2) - average Dice coefficient per nucleus.
+    
+    Args:
+        gt_masks: Ground truth binary masks (H, W) with unique labels per nucleus
+        pred_masks: Predicted binary masks (H, W) with unique labels per nucleus
+    
+    Returns:
+        float: DICE2 score
+    """
+    gt_ids = np.unique(gt_masks)[1:]  # exclude background (0)
+    
+    dice_scores = []
+    for gt_id in gt_ids:
+        gt_mask = (gt_masks == gt_id)
+        
+        # Find overlapping predicted nucleus
+        overlapping_ids = np.unique(pred_masks[gt_mask])
+        # exclude background (0)
+        overlapping_ids = overlapping_ids[overlapping_ids != 0]
+        if len(overlapping_ids) == 0:
+            dice_scores.append(0.0)
+            continue
+        
+        # Use the prediction with maximum overlap
+        best_dice = 0.0
+        for pred_id in overlapping_ids:
+            pred_mask = (pred_masks == pred_id)
+            intersection = np.sum(gt_mask & pred_mask)
+            dice = 2.0 * intersection / (np.sum(gt_mask) + np.sum(pred_mask))
+            best_dice = max(best_dice, dice)
+        
+        dice_scores.append(best_dice)
+    
+    return np.mean(dice_scores) if dice_scores else 0.0
+
+
+def aji(gt_masks, pred_masks):
+    """
+    Aggregated Jaccard Index (AJI).
+    
+    Args:
+        gt_masks: Ground truth binary masks (H, W) with unique labels per nucleus
+        pred_masks: Predicted binary masks (H, W) with unique labels per nucleus
+    
+    Returns:
+        float: AJI score
+    """
+    gt_ids = np.unique(gt_masks)[1:]
+    pred_ids = np.unique(pred_masks)[1:]
+    
+    # Calculate intersection for all GT-pred pairs
+    intersection_sum = 0.0
+    gt_used = set()
+    
+    for pred_id in pred_ids:
+        pred_mask = (pred_masks == pred_id)
+        overlapping_gt_ids = np.unique(gt_masks[pred_mask])
+        # exclude background (0)
+        overlapping_gt_ids = overlapping_gt_ids[overlapping_gt_ids != 0]
+        
+        if len(overlapping_gt_ids) > 0:
+            # Find GT with maximum intersection
+            max_intersection = 0
+            best_gt_id = None
+            for gt_id in overlapping_gt_ids:
+                gt_mask = (gt_masks == gt_id)
+                intersection = np.sum(gt_mask & pred_mask)
+                if intersection > max_intersection:
+                    max_intersection = intersection
+                    best_gt_id = gt_id
+            
+            intersection_sum += max_intersection
+            gt_used.add(best_gt_id)
+    
+    # Calculate union: all GT pixels + all pred pixels - matched intersections
+    gt_area = np.sum(gt_masks > 0)
+    pred_area = np.sum(pred_masks > 0)
+    union = gt_area + pred_area - intersection_sum
+    
+    return intersection_sum / union if union > 0 else 0.0
+
+
+def panoptic_quality(gt_masks, pred_masks, iou_threshold=0.5):
+    """
+    Panoptic Quality (PQ) = Detection Quality (DQ) × Segmentation Quality (SQ).
+    
+    Args:
+        gt_masks: Ground truth binary masks (H, W) with unique labels per nucleus
+        pred_masks: Predicted binary masks (H, W) with unique labels per nucleus
+        iou_threshold: IoU threshold for matching (default: 0.5)
+    
+    Returns:
+        dict: {'pq': PQ score, 'dq': DQ score, 'sq': SQ score}
+    """
+    gt_ids = np.unique(gt_masks)[1:]
+    pred_ids = np.unique(pred_masks)[1:]
+    
+    # Compute IoU matrix
+    iou_matrix = np.zeros((len(gt_ids), len(pred_ids)))
+    for i, gt_id in enumerate(gt_ids):
+        gt_mask = (gt_masks == gt_id)
+        for j, pred_id in enumerate(pred_ids):
+            pred_mask = (pred_masks == pred_id)
+            intersection = np.sum(gt_mask & pred_mask)
+            union = np.sum(gt_mask | pred_mask)
+            iou_matrix[i, j] = intersection / union if union > 0 else 0.0
+    
+    # Find matches with IoU > threshold
+    matched_pairs = []
+    iou_sum = 0.0
+    
+    # Greedy matching: match highest IoU pairs first
+    matched_gt = set()
+    matched_pred = set()
+    
+    for i in range(len(gt_ids)):
+        for j in range(len(pred_ids)):
+            if iou_matrix[i, j] > iou_threshold:
+                if i not in matched_gt and j not in matched_pred:
+                    matched_pairs.append((i, j))
+                    iou_sum += iou_matrix[i, j]
+                    matched_gt.add(i)
+                    matched_pred.add(j)
+    
+    tp = len(matched_pairs)
+    fp = len(pred_ids) - tp
+    fn = len(gt_ids) - tp
+    
+    # Detection Quality (DQ)
+    dq = tp / (tp + 0.5 * fp + 0.5 * fn) if (tp + fp + fn) > 0 else 0.0
+    
+    # Segmentation Quality (SQ)
+    sq = iou_sum / tp if tp > 0 else 0.0
+    
+    # Panoptic Quality (PQ)
+    pq = dq * sq
+    
+    return {'pq': pq, 'dq': dq, 'sq': sq}
+
+
+def fid_evaluation():
     folder_path = "../../results/all_outputs_gt/"
     #folder_path = "../../data/tiles/HE/test/"
     generated_exp_folder = f"{folder_path}/generated_images"
@@ -513,7 +658,53 @@ def main():
     plt.savefig("fid_comparison.png")
     plt.show()
 
-
+def segmentation_evaluation():
+    guidance_scale = 6
+    batch_id = 0
+    
+    for sample_id in range(8):
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+        gt_mask_pattern = f"../../results/all_outputs_w{guidance_scale}/masks/{batch_id}_{sample_id}*.png"
+        gt_mask_paths = glob.glob(gt_mask_pattern)
+        if not gt_mask_paths:
+            raise FileNotFoundError(f"No files found matching pattern: {gt_mask_pattern}")
+        gt_mask_path = gt_mask_paths[0]  # Take the first matching file
+        gt_mask = np.array(Image.open(gt_mask_path))[..., 0] - 127
+        # Convert gt mask to binary
+        gt_mask = (gt_mask > 0).astype(np.uint8)
+        # Hovernet output
+        mat_path = f"../../../hover_net/results/seg_outputs_w{guidance_scale}/mat/{batch_id}_{sample_id}_generated.mat"
+        mat_data = loadmat(mat_path)
+        hovernet_mask = mat_data['inst_map']
+        #hovernet_mask = gt_mask
+        dice_score = dice2(gt_mask, hovernet_mask)
+        aji_score = aji(gt_mask, hovernet_mask)
+        pq_score = panoptic_quality(gt_mask, hovernet_mask)
+        print(f"DICE score: {dice_score}")
+        print(f"AJI score: {aji_score}")
+        print(f"PQ score: {pq_score}")
+        ax[0].imshow(gt_mask, cmap='gray')
+        ax[0].set_title("GT Mask")
+        ax[0].set_frame_on(False)
+        ax[1].imshow(hovernet_mask, cmap='gray')
+        ax[1].set_title("Hovernet Mask")
+        ax[1].set_frame_on(False)
+        # show metrics in the top right corner
+        text = f"DICE: {dice_score:.2f}\nAJI: {aji_score:.2f}\nPQ: {pq_score['pq']:.2f}"
+        ax[1].text(
+            0.98, 0.02, text,
+            fontsize=12,
+            ha='right', va='top',
+            color='white',
+            backgroundcolor='black',
+            transform=ax[1].transAxes
+        )
+        for a in ax:
+            a.axis('off')
+        plt.tight_layout()
+        #plt.savefig(f"segmentation_evaluation_{sample_id}.png")
+        plt.show()
 
 if __name__ == "__main__":
-    main()
+    #fid_evaluation()
+    segmentation_evaluation()
