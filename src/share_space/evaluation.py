@@ -10,6 +10,7 @@ from typing import Tuple
 from tqdm import tqdm
 import copy
 import glob
+import cv2
 import os
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -244,8 +245,6 @@ class FIDScore:
         fid = self.calculate_fid(real_features, fake_features)
         
         return fid
-
-
 
 class MetricsEvaluator:
     """Evaluate multiple metrics for image translation"""
@@ -662,47 +661,72 @@ def segmentation_evaluation():
     guidance_scale = 6
     batch_id = 0
     
-    for sample_id in range(8):
-        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-        gt_mask_pattern = f"../../results/all_outputs_w{guidance_scale}/masks/{batch_id}_{sample_id}*.png"
+    for sample_id in range(1, 5):
+        fig, ax = plt.subplots(1, 5, figsize=(30, 6))
+
+        original_images_pattern = f"../../results/all_outputs_w{guidance_scale}_match/exp_images/{batch_id}_{sample_id}*.png"
+        original_images_paths = glob.glob(original_images_pattern)
+        if not original_images_paths:
+            raise FileNotFoundError(f"No files found matching pattern: {original_images_pattern}")
+        original_image_path = original_images_paths[0]
+        original_image = np.array(Image.open(original_image_path))
+
+        generated_images_pattern = f"../../results/all_outputs_w{guidance_scale}_match/generated_images/{batch_id}_{sample_id}*.png"
+        generated_images_paths = glob.glob(generated_images_pattern)
+        if not generated_images_paths:
+            raise FileNotFoundError(f"No files found matching pattern: {generated_images_pattern}")
+        generated_image_path = generated_images_paths[0]
+        generated_image = np.array(Image.open(generated_image_path))
+
+        gt_mask_pattern = f"../../results/all_outputs_w{guidance_scale}_match/masks/{batch_id}_{sample_id}*.png"
         gt_mask_paths = glob.glob(gt_mask_pattern)
         if not gt_mask_paths:
             raise FileNotFoundError(f"No files found matching pattern: {gt_mask_pattern}")
         gt_mask_path = gt_mask_paths[0]  # Take the first matching file
-        gt_mask = np.array(Image.open(gt_mask_path))[..., 0] - 127
+        mask_batch_id, mask_sample_id = gt_mask_path.split('/')[-1].split('_')[-2], gt_mask_path.split('/')[-1].split('_')[-1].split('.')[0]
+        correct_gt_mask_path = f"../../data/sim/train_{mask_batch_id}_{mask_sample_id}.mask.png"
+        gt_mask = np.array(Image.open(correct_gt_mask_path))
+        # Resize gt mask to generated image size
+        gt_mask = cv2.resize(gt_mask, (generated_image.shape[1], generated_image.shape[0]), interpolation=cv2.INTER_NEAREST)
         # Convert gt mask to binary
-        gt_mask = (gt_mask > 0).astype(np.uint8)
+        #gt_mask = (gt_mask > 0).astype(np.uint8)
         # Hovernet output
-        mat_path = f"../../../hover_net/results/seg_outputs_w{guidance_scale}/mat/{batch_id}_{sample_id}_generated.mat"
+        mat_path = f"../../results/seg_outputs_w{guidance_scale}_match/mat/{batch_id}_{sample_id}_generated.mat"
         mat_data = loadmat(mat_path)
         hovernet_mask = mat_data['inst_map']
-        #hovernet_mask = gt_mask
+        overlay_image_path = f"../../results/seg_outputs_w{guidance_scale}_match/overlay/{batch_id}_{sample_id}_generated.png"
+        overlay_image = np.array(Image.open(overlay_image_path))
+        ax[0].imshow(original_image)
+        ax[2].imshow(generated_image)
+        ax[1].imshow(gt_mask, cmap='gray')
+        ax[3].imshow(hovernet_mask, cmap='jet')
+        ax[4].imshow(overlay_image)
+        # Add title
+        ax[0].set_title("Original Image")
+        ax[1].set_title("GT Mask")
+        ax[2].set_title("Generated Image")
+        ax[3].set_title("Hovernet Mask")
+        ax[4].set_title("Overlay Image")
         dice_score = dice2(gt_mask, hovernet_mask)
         aji_score = aji(gt_mask, hovernet_mask)
         pq_score = panoptic_quality(gt_mask, hovernet_mask)
         print(f"DICE score: {dice_score}")
         print(f"AJI score: {aji_score}")
         print(f"PQ score: {pq_score}")
-        ax[0].imshow(gt_mask, cmap='gray')
-        ax[0].set_title("GT Mask")
-        ax[0].set_frame_on(False)
-        ax[1].imshow(hovernet_mask, cmap='gray')
-        ax[1].set_title("Hovernet Mask")
-        ax[1].set_frame_on(False)
         # show metrics in the top right corner
         text = f"DICE: {dice_score:.2f}\nAJI: {aji_score:.2f}\nPQ: {pq_score['pq']:.2f}"
-        ax[1].text(
+        ax[4].text(
             0.98, 0.02, text,
             fontsize=12,
             ha='right', va='top',
             color='white',
             backgroundcolor='black',
-            transform=ax[1].transAxes
+            transform=ax[4].transAxes
         )
         for a in ax:
             a.axis('off')
         plt.tight_layout()
-        #plt.savefig(f"segmentation_evaluation_{sample_id}.png")
+        plt.savefig(f"./viz/segmentation_evaluation_{sample_id}.png", dpi=300)
         plt.show()
 
 if __name__ == "__main__":
