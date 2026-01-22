@@ -19,6 +19,10 @@ from share_space.utils import (
 )
 from scipy.optimize import linear_sum_assignment
 from scipy.io import loadmat
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
+import multiprocessing as mp
+
 
 class FIDScore:
     """Frechet Distance for evaluating image quality with multiple encoders"""
@@ -657,77 +661,249 @@ def fid_evaluation():
     plt.savefig("fid_comparison.png")
     plt.show()
 
-def segmentation_evaluation():
-    guidance_scale = 6
-    batch_id = 0
-    
-    for sample_id in range(1, 5):
-        fig, ax = plt.subplots(1, 5, figsize=(30, 6))
 
-        original_images_pattern = f"../../results/all_outputs_w{guidance_scale}_match/exp_images/{batch_id}_{sample_id}*.png"
+def process_single_sample(batch_id, sample_id, guidance_scale):
+    """Process a single sample and return metrics."""
+    try:
+        # Load images and masks
+        original_images_pattern = f"../../results/tmp/all_outputs_w{guidance_scale}/exp_images/{batch_id}_{sample_id}*.png"
         original_images_paths = glob.glob(original_images_pattern)
         if not original_images_paths:
-            raise FileNotFoundError(f"No files found matching pattern: {original_images_pattern}")
-        original_image_path = original_images_paths[0]
-        original_image = np.array(Image.open(original_image_path))
+            return None
+        original_image = np.array(Image.open(original_images_paths[0]))
 
-        generated_images_pattern = f"../../results/all_outputs_w{guidance_scale}_match/generated_images/{batch_id}_{sample_id}*.png"
+        generated_images_pattern = f"../../results/tmp/all_outputs_w{guidance_scale}/generated_images/{batch_id}_{sample_id}*.png"
         generated_images_paths = glob.glob(generated_images_pattern)
         if not generated_images_paths:
-            raise FileNotFoundError(f"No files found matching pattern: {generated_images_pattern}")
+            return None
         generated_image_path = generated_images_paths[0]
         generated_image = np.array(Image.open(generated_image_path))
 
-        gt_mask_pattern = f"../../results/all_outputs_w{guidance_scale}_match/masks/{batch_id}_{sample_id}*.png"
+        gt_mask_pattern = f"../../results/tmp/all_outputs_w{guidance_scale}/masks/{batch_id}_{sample_id}*.png"
         gt_mask_paths = glob.glob(gt_mask_pattern)
         if not gt_mask_paths:
-            raise FileNotFoundError(f"No files found matching pattern: {gt_mask_pattern}")
-        gt_mask_path = gt_mask_paths[0]  # Take the first matching file
-        mask_batch_id, mask_sample_id = gt_mask_path.split('/')[-1].split('_')[-2], gt_mask_path.split('/')[-1].split('_')[-1].split('.')[0]
-        correct_gt_mask_path = f"../../data/sim/train_{mask_batch_id}_{mask_sample_id}.mask.png"
-        gt_mask = np.array(Image.open(correct_gt_mask_path))
-        # Resize gt mask to generated image size
-        gt_mask = cv2.resize(gt_mask, (generated_image.shape[1], generated_image.shape[0]), interpolation=cv2.INTER_NEAREST)
-        # Convert gt mask to binary
-        #gt_mask = (gt_mask > 0).astype(np.uint8)
-        # Hovernet output
-        mat_path = f"../../results/seg_outputs_w{guidance_scale}_match/mat/{batch_id}_{sample_id}_generated.mat"
-        mat_data = loadmat(mat_path)
-        hovernet_mask = mat_data['inst_map']
-        overlay_image_path = f"../../results/seg_outputs_w{guidance_scale}_match/overlay/{batch_id}_{sample_id}_generated.png"
-        overlay_image = np.array(Image.open(overlay_image_path))
+            return None
+        gt_mask_path = gt_mask_paths[0]
+        gt_mask = np.array(Image.open(gt_mask_path))[..., 0]
+        if 0:
+            mask_batch_id, mask_sample_id = gt_mask_path.split('/')[-1].split('_')[-2], gt_mask_path.split('/')[-1].split('_')[-1].split('.')[0]
+            correct_gt_mask_path = f"../../data/sim/train_{mask_batch_id}_{mask_sample_id}.mask.png"
+            gt_mask = np.array(Image.open(correct_gt_mask_path))
+            
+            # Resize gt mask to generated image size
+            gt_mask = cv2.resize(gt_mask, (generated_image.shape[1], generated_image.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+        # Load prediction mask
+        pred_mask_path = f"../../results/tmp/cellpose_w{guidance_scale}/{batch_id}_{sample_id}_generated_masks.png"
+        pred_mask = np.array(Image.open(pred_mask_path))
+
+        # Create overlay
+        overlay_image = generated_image.copy()
+        instance_ids = np.unique(pred_mask)
+        instance_ids = instance_ids[instance_ids > 0]
+
+        for instance_id in instance_ids:
+            instance_mask = (pred_mask == instance_id).astype(np.uint8) * 255
+            contours, _ = cv2.findContours(instance_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(overlay_image, contours, -1, (0, 0, 255), 2)
+
+        # Compute metrics
+        dice_score = dice2(gt_mask, pred_mask)
+        aji_score = aji(gt_mask, pred_mask)
+        pq_score = panoptic_quality(gt_mask, pred_mask)
+        ap, tp, fp, fn = average_precision_at_iou(gt_mask, pred_mask, iou_threshold=0.5)
+
+        # Create visualization
+        fig, ax = plt.subplots(1, 5, figsize=(30, 6))
         ax[0].imshow(original_image)
+        ax[1].imshow(gt_mask, cmap='jet')
         ax[2].imshow(generated_image)
-        ax[1].imshow(gt_mask, cmap='gray')
-        ax[3].imshow(hovernet_mask, cmap='jet')
+        ax[3].imshow(pred_mask, cmap='jet')
         ax[4].imshow(overlay_image)
-        # Add title
+        
         ax[0].set_title("Original Image")
         ax[1].set_title("GT Mask")
         ax[2].set_title("Generated Image")
-        ax[3].set_title("Hovernet Mask")
+        ax[3].set_title("Pred Mask")
         ax[4].set_title("Overlay Image")
-        dice_score = dice2(gt_mask, hovernet_mask)
-        aji_score = aji(gt_mask, hovernet_mask)
-        pq_score = panoptic_quality(gt_mask, hovernet_mask)
-        print(f"DICE score: {dice_score}")
-        print(f"AJI score: {aji_score}")
-        print(f"PQ score: {pq_score}")
-        # show metrics in the top right corner
-        text = f"DICE: {dice_score:.2f}\nAJI: {aji_score:.2f}\nPQ: {pq_score['pq']:.2f}"
+
+        text = f"DICE: {dice_score:.2f}\nAJI: {aji_score:.2f}\nPQ: {pq_score['pq']:.2f}\nAP: {ap:.2f}"
         ax[4].text(
             0.98, 0.02, text,
             fontsize=12,
-            ha='right', va='top',
+            ha='right', va='bottom',
             color='white',
-            backgroundcolor='black',
+            bbox=dict(boxstyle='round', facecolor='black', alpha=0.8),
             transform=ax[4].transAxes
         )
+        
         for a in ax:
             a.axis('off')
-        plt.tight_layout()
-        plt.savefig(f"./viz/segmentation_evaluation_{sample_id}.png", dpi=300)
-        plt.show()
+        plt.tight_layout(pad=2.0)
+        plt.subplots_adjust(top=0.95)
+
+        plt.savefig(f"./viz/segmentation_evaluation_{batch_id}_{sample_id}.png", dpi=300, bbox_inches='tight')
+        plt.close(fig)
+
+        return {
+            'batch_id': batch_id,
+            'sample_id': sample_id,
+            'dice': dice_score,
+            'aji': aji_score,
+            'pq': pq_score['pq'],
+            'ap': ap
+        }
+    
+    except Exception as e:
+        print(f"Error processing batch {batch_id}, sample {sample_id}: {e}")
+        return None
+
+
+def segmentation_evaluation(num_workers=None):
+    """
+    Parallel version of segmentation evaluation.
+    
+    Args:
+        num_workers: Number of parallel workers. If None, uses CPU count - 1.
+    """
+    guidance_scale = 1
+    
+    if num_workers is None:
+        num_workers = max(1, mp.cpu_count() - 1)
+    
+    print(f"Using {num_workers} parallel workers")
+    
+    # Generate all (batch_id, sample_id) pairs
+    tasks = [(batch_id, sample_id) for batch_id in range(28) for sample_id in range(8)]
+    
+    # Process in parallel
+    results = []
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        # Submit all tasks
+        future_to_task = {
+            executor.submit(process_single_sample, batch_id, sample_id, guidance_scale): (batch_id, sample_id)
+            for batch_id, sample_id in tasks
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_task):
+            batch_id, sample_id = future_to_task[future]
+            try:
+                result = future.result()
+                if result is not None:
+                    results.append(result)
+                    print(f"Completed batch {batch_id}, sample {sample_id}")
+            except Exception as e:
+                print(f"Error in batch {batch_id}, sample {sample_id}: {e}")
+    
+    # Extract metrics
+    dice_scores = [r['dice'] for r in results]
+    aji_scores = [r['aji'] for r in results]
+    pq_scores = [r['pq'] for r in results]
+    ap_scores = [r['ap'] for r in results]
+    
+    # Print summary statistics
+    print("\n" + "="*50)
+    print("SUMMARY STATISTICS")
+    print("="*50)
+    print(f"Total samples processed: {len(results)}")
+    print(f"DICE scores: {np.mean(dice_scores):.2f} ± {np.std(dice_scores):.2f}")
+    print(f"AJI scores:  {np.mean(aji_scores):.2f} ± {np.std(aji_scores):.2f}")
+    print(f"PQ scores:   {np.mean(pq_scores):.2f} ± {np.std(pq_scores):.2f}")
+    print(f"AP scores:   {np.mean(ap_scores):.2f} ± {np.std(ap_scores):.2f}")
+    
+    return results
+
+
+
+def compute_iou(mask1, mask2):
+    """
+    Compute IoU between two binary masks.
+    
+    Args:
+        mask1: Binary mask (True/False or 1/0)
+        mask2: Binary mask (True/False or 1/0)
+    
+    Returns:
+        IoU score (float)
+    """
+    intersection = np.logical_and(mask1, mask2).sum()
+    union = np.logical_or(mask1, mask2).sum()
+    
+    if union == 0:
+        return 0.0
+    
+    return intersection / union
+
+
+def average_precision_at_iou(gt_mask, pred_mask, iou_threshold=0.5):
+    """
+    Compute Average Precision @ IoU threshold for instance segmentation.
+    
+    Args:
+        gt_mask: Ground truth mask (H x W) with integer labels for each instance
+                 (0 = background, 1, 2, 3... = different cells/nuclei)
+        pred_mask: Predicted mask (H x W) with integer labels for each instance
+        iou_threshold: IoU threshold for matching (default 0.5)
+    
+    Returns:
+        ap: Average precision score
+        tp: Number of true positives
+        fp: Number of false positives
+        fn: Number of false negatives
+    """
+    # Get unique labels (excluding background=0)
+    gt_labels = np.unique(gt_mask)
+    gt_labels = gt_labels[gt_labels != 0]
+    
+    pred_labels = np.unique(pred_mask)
+    pred_labels = pred_labels[pred_labels != 0]
+    
+    n_gt = len(gt_labels)
+    n_pred = len(pred_labels)
+    
+    # Handle edge cases
+    if n_gt == 0 and n_pred == 0:
+        return 1.0, 0, 0, 0  # Perfect score when both are empty
+    if n_gt == 0:
+        return 0.0, 0, n_pred, 0  # All predictions are false positives
+    if n_pred == 0:
+        return 0.0, 0, 0, n_gt  # All ground truths are false negatives
+    
+    # Compute IoU matrix (n_gt x n_pred)
+    iou_matrix = np.zeros((n_gt, n_pred))
+    
+    for i, gt_label in enumerate(gt_labels):
+        gt_binary = (gt_mask == gt_label)
+        
+        for j, pred_label in enumerate(pred_labels):
+            pred_binary = (pred_mask == pred_label)
+            iou_matrix[i, j] = compute_iou(gt_binary, pred_binary)
+    
+    # Use Hungarian algorithm to find optimal matching
+    # We want to maximize IoU, so we use negative IoU for minimization
+    row_ind, col_ind = linear_sum_assignment(-iou_matrix)
+    
+    # Count true positives (matches with IoU >= threshold)
+    tp = 0
+    matched_gt = set()
+    matched_pred = set()
+    
+    for gt_idx, pred_idx in zip(row_ind, col_ind):
+        if iou_matrix[gt_idx, pred_idx] >= iou_threshold:
+            tp += 1
+            matched_gt.add(gt_idx)
+            matched_pred.add(pred_idx)
+    
+    # Count false positives and false negatives
+    fp = n_pred - tp  # Unmatched predictions
+    fn = n_gt - tp    # Unmatched ground truths
+    
+    # Compute Average Precision
+    ap = tp / (tp + fp + fn)
+    
+    return ap, tp, fp, fn
+
 
 if __name__ == "__main__":
     #fid_evaluation()
