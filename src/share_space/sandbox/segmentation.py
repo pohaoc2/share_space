@@ -2,7 +2,7 @@
 CellViT Cell Segmentation Script - Simple Configuration Version
 Configure all parameters directly in the script.
 """
-
+import pyvips
 import os
 import torch
 import numpy as np
@@ -354,9 +354,6 @@ def convert_png_to_tif(image_folder: str):
 
 if __name__ == '__main__':
     #main()
-    image_path = '../../../data/exp/train_1_000.png'
-    image = Image.open(image_path)
-    print(image.size)
-    asd()
+    convert_png_to_tif("../../../data/exp")
     
     
