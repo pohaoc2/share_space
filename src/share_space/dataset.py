@@ -363,7 +363,7 @@ def get_real_dataloaders(
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=False,#True,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True  # Drop last incomplete batch
